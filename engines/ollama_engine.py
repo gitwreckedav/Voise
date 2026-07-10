@@ -11,6 +11,8 @@ It is simply a wrapper around Ollama's HTTP API.
 
 import requests
 
+import strings as S
+
 
 class OllamaEngine:
 
@@ -22,21 +24,9 @@ class OllamaEngine:
         # Default lightweight formatter model
         self.model = "llama3.2:3b"
 
-        # Initial system prompt
-        self.system_prompt = """
-You are a transcript formatter.
-
-Rules:
-
-- Do NOT summarize.
-- Do NOT invent information.
-- Preserve meaning exactly.
-- Correct spelling.
-- Correct punctuation.
-- Improve grammar.
-- Convert spoken lists into markdown lists.
-- Return ONLY the cleaned text.
-"""
+        # The prompt text lives in strings.py so AV can tweak the
+        # formatting rules without touching this logic.
+        self.system_prompt = S.FORMATTER_PROMPT
 
     def process(self, text):
 
