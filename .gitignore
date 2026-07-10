@@ -1,5 +1,8 @@
 runtime/
 .venv/
-__pychace__/
+__pycache__/
 *.pyc
 .DS_Store
+ui/temp/
+.aider*
+*.zip
