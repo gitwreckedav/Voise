@@ -10,8 +10,9 @@ Read before writing any code: `@docs/Voise_MicroPRD.md`
 
 ## Current State
 
-Implemented: GUI, Recorder, Whisper integration, Ollama integration, OT1/OT2 layout.
-Missing: streaming transcription, chunked audio pipeline, background STT worker, socket abstraction, developer panel, automatic OT2 updates.
+Implemented: GUI, Recorder (bulk), Whisper integration (blocking), Ollama integration (threaded, GC race fixed), OT1/OT2 layout, strings.py.
+Missing: socket abstraction (built then reverted — re-apply with GC fix), background STT, provider/model visibility, developer panel, Settings page (editable prompt with protected default), streaming transcription, live OT1, recording indicator.
+Note: OT2 is generated MANUALLY (Process button). Do not auto-run the formatter — AV's spec.
 
 This section goes stale fast at this stage of the project. Update it every time something moves from Missing to Implemented - don't let it drift.
 

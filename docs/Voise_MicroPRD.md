@@ -1,102 +1,248 @@
 
 # Voise — Micro PRD
+
 ## Goal
 Offline, privacy-first desktop voice transcription app.
 Pipeline:
 `Recorder → STT → OutputText1(OT1) → LLM → OutputText2(OT2)`
-Everything runs locally.
+Everything runs locally. Nothing leaves the device.
+
 ---
+
+## Phase 1 Vision
+
+Voise is **not** a chatbot.
+
+It is a local AI pipeline with complete transparency into every stage of processing.
+
+The user should always know:
+
+- what is happening
+- which component is responsible
+- which model is currently running
+- where the data currently is
+
+Nothing should feel like a black box.
+
+---
+
 ## Tech Stack
 - Python
 - PySide6
 - Ollama
 - whisper.cpp
 - macOS (M4 Mini, 16 GB)
+
 ---
-## Functional Flow
-1. **Recorder**
-   - Capture microphone audio.
-2. **STT Socket**
-   - Provider: Whisper.
-   - Convert speech to text.
-3. **OT1**
-   - Live raw transcript.
-   - User editable.
-4. **LLM Socket**
-   - Provider: Ollama.
-   - Clean punctuation.
-   - Fix grammar.
-   - Optionally summarize.
-5. **OT2**
-   - Clean transcript.
-   - User editable.
+
+## Phase 1 UI
+
+Single-window desktop application.
+
+Two pages only:
+
+- Main
+- Settings
+
+No additional views.
+
 ---
-## Immediate MVP Goal
-Current:
-`Record → Stop → Whisper → OT1`
-Target:
-`Record → Whisper streams continuously → OT1 updates live`
-No "record first, process later."
+
+## Main Pipeline
+
+```
+Recorder
+    ↓
+STT Socket
+    ↓
+OT1
+    ↓
+LLM Socket
+    ↓
+OT2
+```
+
+### 1. Recorder
+
+Purpose: capture microphone audio.
+
+Two modes:
+
+1. **Bulk**: Start Recording / Stop Recording buttons — record speech, then transcribe.
+2. **Streaming**: user keeps speaking and the STT model transcribes simultaneously
+   (a delay of around 2 seconds is acceptable). Not record-then-process.
+
+- Recording status indicator (when the microphone is actively in use).
+
+### 2. STT Socket
+
+Purpose: convert speech to text.
+
+Phase 1 provider: whisper.cpp
+
+Display:
+- Provider
+- Loaded model
+- Status
+- Processing indicator
+- Current latency (optional)
+
+### 3. OT1
+
+Purpose: raw live transcript.
+
+Requirements:
+- Continuously updates while speaking (streaming mode)
+- User editable
+- No formatting
+- No punctuation cleanup
+
+OT1 is the source of truth for the LLM.
+
+### 4. LLM Socket
+
+Purpose: transform OT1 into a readable document.
+
+Phase 1 provider: Ollama
+
+Responsibilities:
+- punctuation
+- grammar
+- formatting
+- optional summarization
+
+**System prompt rule:** the user can change the system prompt, but there is a
+default, non-delete-able system prompt that instructs the LLM to clean OT1 —
+spell checks, grammatical fixes, converting to numbered/bulleted lists where
+appropriate — while ensuring no context loss from the original speech dump.
+A "reset to default" path must always exist.
+
+Display:
+- Provider
+- Loaded model
+- Status
+- Processing indicator
+- Last inference time
+
+### 5. OT2
+
+Purpose: clean output.
+
+Requirements:
+- Generated **manually** (user triggers Process; no auto-run)
+- User editable
+- Copy
+- Export (later)
+
 ---
-## Architecture Principles
-- Offline only.
-- Modular sockets.
-- Providers are swappable.
-- GUI should not know implementation details.
+
+## Developer Panel
+
+Collapsible. Visible only when expanded.
+
+Purpose: complete visibility into the pipeline — **transparency, not debugging**.
+
+For every stage display:
+- Current status
+- Provider
+- Model
+- Current operation
+- Last completed operation
+- Processing state (Idle / Running / Error)
+
 Example:
+
+```
+Recorder
+- Recording
+
+STT
+- whisper.cpp
+- large-v3-turbo
+- Processing chunk 41
+
+LLM
+- Ollama
+- llama3.2:3b
+- Cleaning transcript
+
+Pipeline
+- Recorder ✔
+- STT ✔
+- OT1 ✔
+- LLM Running
+- OT2 Waiting
+```
+
+---
+
+## Phase 1 Scope
+
+Must Have:
+- Streaming transcription
+- Live OT1
+- Manual OT2 generation
+- Developer panel
+- Provider visibility
+- Model visibility
+- Socket abstraction
+
+Must Not Have:
+- Obsidian integration (Phase 2)
+- Hotkeys
+- Background recording
+- Multiple recorder providers
+- Cloud providers
+- Plugin marketplace
+
+---
+
+## Design Principle
+
+Every AI component is treated as a replaceable socket.
+
+The GUI never depends directly on Whisper or Ollama. It only communicates with:
 - Recorder Socket
 - STT Socket
 - LLM Socket
----
-## Developer Panel
-Collapsible panel showing:
-### Recorder
-- Provider
-- Status
-- Audio queue
-### STT
-- Provider
-- Model
-- Current chunk
-- Partial transcript
-- Latency
-### LLM
-- Provider
-- Model
-- Current prompt
-- Inference time
-### Pipeline
-- Current stage
-- Errors
-- Logs
-Purpose: complete visibility into what the application is doing.
----
-## Current State
-Implemented:
-- GUI
-- Recorder
-- Whisper integration
-- Ollama integration
-- OT1 / OT2 layout
-Missing:
-- Streaming transcription
-- Chunked audio pipeline
-- Background STT worker
-- Socket abstraction
-- Developer panel
-- Automatic OT2 updates
----
-## Development Rules
-- One feature at a time.
-- One working commit at a time.
-- Keep the app runnable after every change.
-- No rewrites.
-- Minimize file changes.
-- Implementation-first, discussion second.
 
+Swapping implementations should require changing the socket provider, not the GUI.
+
+---
+
+## Current State (2026-07-10)
+
+Implemented:
+- GUI (single main page)
+- Recorder (bulk mode)
+- Whisper integration (blocking, on Stop)
+- Ollama integration (background thread, GC race fixed)
+- OT1 / OT2 layout, Copy buttons
+- strings.py — all user-facing text + formatter prompt in one editable file
+
+Missing:
+- Socket abstraction (was built, then reverted with the threading breakage — needs re-applying with the GC fix)
+- Background STT (UI currently freezes during transcription)
+- Provider/model visibility, developer panel
+- Settings page (editable system prompt with protected default)
+- Streaming transcription / chunked audio / live OT1
+- Recording status indicator
+
+---
+
+## Development Rules
+
+- One feature at a time. One working commit at a time.
+- After every commit that touches the record→STT→LLM flow, AV manually verifies
+  one full recording cycle before the next change. Claude cannot test the mic.
+- Keep the app runnable after every change.
+- No rewrites. Minimize file changes.
+- If AV reports breakage: revert first, diagnose after.
+
+---
 
 To Claude:
 
-1. Keep things Noob friendly
-2. Keep the base clean so that the product can grow into a more complex AI brain gradually (organically and iteratively over time)
-3. Make it so that any cosmetic changes to text (such as flair text) can be easily editable by me (the developer0) without having to bother claude code. Eg - If there is an FAQ section within the APP, i should be able to navigate to the text within the code base and make changes on my own as needed..
+1. Keep things noob friendly.
+2. Keep the base clean so the product can grow into a more complex AI brain gradually (organically and iteratively over time).
+3. Any cosmetic text (flair text, labels, FAQ) must be editable by AV alone in strings.py without touching logic or asking Claude Code.
