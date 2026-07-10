@@ -23,6 +23,7 @@ class MainWindow(QMainWindow):
         self.stt = STTSocket()
         self.llm = LLMSocket()
         self.llm_thread = None
+        self.stt_thread = None
 
         self.setWindowTitle(S.APP_TITLE)
         self.resize(1000, 850)
@@ -95,12 +96,33 @@ class MainWindow(QMainWindow):
 
     def stop_recording(self):
         self.status.setText(S.STATUS_TRANSCRIBING)
-        audio = self.recorder.stop()
-        text = self.stt.transcribe(audio)
-        self.transcript.setPlainText(text)
-        self.status.setText(S.STATUS_READY)
-        self.start_button.setEnabled(True)
         self.stop_button.setEnabled(False)
+
+        try:
+            audio = self.recorder.stop()
+        except Exception as e:
+            self.status.setText(str(e))
+            self.start_button.setEnabled(True)
+            return
+
+        # Whisper takes a few seconds; run it off the UI thread so
+        # the window stays responsive while it works.
+        self.stt_thread = run_in_background(
+            lambda: self.stt.transcribe(audio),
+            self.stt_finished,
+            self.stt_failed,
+        )
+
+    def stt_finished(self, text):
+        self.transcript.setPlainText(text)
+        self.start_button.setEnabled(True)
+        # Full pipeline with zero extra clicks: raw transcript is in,
+        # now hand it straight to the LLM to produce OT2.
+        self.process_transcript()
+
+    def stt_failed(self, err):
+        self.status.setText(err)
+        self.start_button.setEnabled(True)
 
     def process_transcript(self):
         txt = self.transcript.toPlainText().strip()
