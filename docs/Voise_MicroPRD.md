@@ -78,13 +78,13 @@ Implemented:
 - Whisper integration
 - Ollama integration
 - OT1 / OT2 layout
-- Socket abstraction (Recorder / STT / LLM sockets)
-- Background STT + LLM workers (UI never freezes)
-- Automatic OT2 updates (formatter runs as soon as OT1 lands)
 Missing:
 - Streaming transcription
 - Chunked audio pipeline
+- Background STT worker
+- Socket abstraction
 - Developer panel
+- Automatic OT2 updates
 ---
 ## Development Rules
 - One feature at a time.

@@ -5,11 +5,9 @@ from PySide6.QtWidgets import (
     QPushButton, QTextEdit, QVBoxLayout, QWidget
 )
 
-import strings as S
-from sockets.llm_socket import LLMSocket
-from sockets.recorder_socket import RecorderSocket
-from sockets.stt_socket import STTSocket
-from workers.task_worker import run_in_background
+from engines.recorder import Recorder
+from engines.whisper_engine import WhisperEngine
+from workers.ollama_worker import run_ollama
 
 
 class MainWindow(QMainWindow):
@@ -17,15 +15,11 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        # The GUI only knows about sockets, never about Whisper or
-        # Ollama themselves (see sockets/__init__.py).
-        self.recorder = RecorderSocket()
-        self.stt = STTSocket()
-        self.llm = LLMSocket()
-        self.llm_thread = None
-        self.stt_thread = None
+        self.recorder = None
+        self.whisper = WhisperEngine()
+        self.ollama_thread = None
 
-        self.setWindowTitle(S.APP_TITLE)
+        self.setWindowTitle("Voise")
         self.resize(1000, 850)
 
         central = QWidget()
@@ -35,17 +29,17 @@ class MainWindow(QMainWindow):
 
         # STT Socket
         row = QHBoxLayout()
-        row.addWidget(QLabel(S.SPEECH_ENGINE_LABEL))
+        row.addWidget(QLabel("Speech Engine"))
         self.engine = QComboBox()
-        self.engine.addItems([self.stt.provider_name])
+        self.engine.addItems(["Whisper.cpp"])
         row.addWidget(self.engine)
         row.addStretch()
         layout.addLayout(row)
 
         # Record
         row = QHBoxLayout()
-        self.start_button = QPushButton(S.START_RECORDING)
-        self.stop_button = QPushButton(S.STOP_RECORDING)
+        self.start_button = QPushButton("Start Recording")
+        self.stop_button = QPushButton("Stop Recording")
         self.stop_button.setEnabled(False)
         self.start_button.clicked.connect(self.start_recording)
         self.stop_button.clicked.connect(self.stop_recording)
@@ -53,29 +47,29 @@ class MainWindow(QMainWindow):
         row.addWidget(self.stop_button)
         layout.addLayout(row)
 
-        self.status = QLabel(S.STATUS_READY)
+        self.status = QLabel("Ready")
         layout.addWidget(self.status)
 
-        layout.addWidget(QLabel(S.RAW_TRANSCRIPT_LABEL))
+        layout.addWidget(QLabel("Raw Transcript"))
         self.transcript = QTextEdit()
         layout.addWidget(self.transcript)
 
         row = QHBoxLayout()
-        row.addWidget(QLabel(S.FORMATTER_LABEL))
-        self.process_button = QPushButton(S.PROCESS)
+        row.addWidget(QLabel("Formatter"))
+        self.process_button = QPushButton("Process")
         self.process_button.clicked.connect(self.process_transcript)
         row.addStretch()
         row.addWidget(self.process_button)
         layout.addLayout(row)
 
-        layout.addWidget(QLabel(S.PROCESSED_OUTPUT_LABEL))
+        layout.addWidget(QLabel("Processed Output"))
         self.processed = QTextEdit()
         layout.addWidget(self.processed)
 
         row = QHBoxLayout()
-        self.copy_raw = QPushButton(S.COPY_RAW)
-        self.copy_processed = QPushButton(S.COPY_PROCESSED)
-        self.clear = QPushButton(S.CLEAR)
+        self.copy_raw = QPushButton("Copy Raw")
+        self.copy_processed = QPushButton("Copy Processed")
+        self.clear = QPushButton("Clear")
         self.copy_raw.clicked.connect(self.copy_raw_text)
         self.copy_processed.clicked.connect(self.copy_processed_text)
         self.clear.clicked.connect(self.clear_all)
@@ -87,64 +81,44 @@ class MainWindow(QMainWindow):
 
     def start_recording(self):
         try:
+            self.recorder = Recorder()
             self.recorder.start()
-            self.status.setText(S.STATUS_RECORDING)
+            self.status.setText("Recording...")
             self.start_button.setEnabled(False)
             self.stop_button.setEnabled(True)
         except Exception as e:
             self.status.setText(str(e))
 
     def stop_recording(self):
-        self.status.setText(S.STATUS_TRANSCRIBING)
-        self.stop_button.setEnabled(False)
-
-        try:
-            audio = self.recorder.stop()
-        except Exception as e:
-            self.status.setText(str(e))
-            self.start_button.setEnabled(True)
-            return
-
-        # Whisper takes a few seconds; run it off the UI thread so
-        # the window stays responsive while it works.
-        self.stt_thread = run_in_background(
-            lambda: self.stt.transcribe(audio),
-            self.stt_finished,
-            self.stt_failed,
-        )
-
-    def stt_finished(self, text):
+        self.status.setText("Running Whisper...")
+        audio = self.recorder.stop()
+        text = self.whisper.transcribe(audio)
         self.transcript.setPlainText(text)
+        self.status.setText("Ready")
         self.start_button.setEnabled(True)
-        # Full pipeline with zero extra clicks: raw transcript is in,
-        # now hand it straight to the LLM to produce OT2.
-        self.process_transcript()
-
-    def stt_failed(self, err):
-        self.status.setText(err)
-        self.start_button.setEnabled(True)
+        self.stop_button.setEnabled(False)
 
     def process_transcript(self):
         txt = self.transcript.toPlainText().strip()
         if not txt:
             return
-        self.status.setText(S.STATUS_FORMATTING)
+        self.status.setText("Running Ollama...")
         self.process_button.setEnabled(False)
-        self.llm_thread = run_in_background(
-            lambda: self.llm.process(txt),
+        self.ollama_thread = run_ollama(
+            txt,
             self.ollama_finished,
-            self.ollama_failed,
+            self.ollama_failed
         )
 
     def ollama_finished(self, text):
         self.processed.setPlainText(text)
         self.process_button.setEnabled(True)
-        self.status.setText(S.STATUS_READY)
+        self.status.setText("Ready")
 
     def ollama_failed(self, err):
         self.processed.setPlainText(err)
         self.process_button.setEnabled(True)
-        self.status.setText(S.STATUS_FAILED)
+        self.status.setText("Failed")
 
     def copy_raw_text(self):
         QGuiApplication.clipboard().setText(
