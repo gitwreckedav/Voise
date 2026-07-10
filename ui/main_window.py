@@ -6,9 +6,10 @@ from PySide6.QtWidgets import (
 )
 
 import strings as S
-from engines.recorder import Recorder
-from engines.whisper_engine import WhisperEngine
-from workers.ollama_worker import run_ollama
+from sockets.llm_socket import LLMSocket
+from sockets.recorder_socket import RecorderSocket
+from sockets.stt_socket import STTSocket
+from workers.task_worker import run_in_background
 
 
 class MainWindow(QMainWindow):
@@ -16,9 +17,12 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.recorder = None
-        self.whisper = WhisperEngine()
-        self.ollama_thread = None
+        # The GUI only knows about sockets, never about Whisper or
+        # Ollama themselves (see sockets/__init__.py).
+        self.recorder = RecorderSocket()
+        self.stt = STTSocket()
+        self.llm = LLMSocket()
+        self.llm_thread = None
 
         self.setWindowTitle(S.APP_TITLE)
         self.resize(1000, 850)
@@ -32,7 +36,7 @@ class MainWindow(QMainWindow):
         row = QHBoxLayout()
         row.addWidget(QLabel(S.SPEECH_ENGINE_LABEL))
         self.engine = QComboBox()
-        self.engine.addItems(["Whisper.cpp"])
+        self.engine.addItems([self.stt.provider_name])
         row.addWidget(self.engine)
         row.addStretch()
         layout.addLayout(row)
@@ -82,7 +86,6 @@ class MainWindow(QMainWindow):
 
     def start_recording(self):
         try:
-            self.recorder = Recorder()
             self.recorder.start()
             self.status.setText(S.STATUS_RECORDING)
             self.start_button.setEnabled(False)
@@ -93,7 +96,7 @@ class MainWindow(QMainWindow):
     def stop_recording(self):
         self.status.setText(S.STATUS_TRANSCRIBING)
         audio = self.recorder.stop()
-        text = self.whisper.transcribe(audio)
+        text = self.stt.transcribe(audio)
         self.transcript.setPlainText(text)
         self.status.setText(S.STATUS_READY)
         self.start_button.setEnabled(True)
@@ -105,10 +108,10 @@ class MainWindow(QMainWindow):
             return
         self.status.setText(S.STATUS_FORMATTING)
         self.process_button.setEnabled(False)
-        self.ollama_thread = run_ollama(
-            txt,
+        self.llm_thread = run_in_background(
+            lambda: self.llm.process(txt),
             self.ollama_finished,
-            self.ollama_failed
+            self.ollama_failed,
         )
 
     def ollama_finished(self, text):
