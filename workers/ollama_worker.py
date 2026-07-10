@@ -62,6 +62,13 @@ def run_ollama(text, finished_callback, error_callback):
 
     thread.finished.connect(thread.deleteLater)
 
+    # Keep a strong reference to the worker by pinning it to the
+    # thread object. Without this, Python's garbage collector can
+    # destroy the worker before the thread calls run() - the request
+    # never fires, no signal ever comes back, and the UI hangs
+    # forever on "Running Ollama...". Whether it worked was a race.
+    thread.worker = worker
+
     thread.start()
 
     return thread
