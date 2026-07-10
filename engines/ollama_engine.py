@@ -28,10 +28,14 @@ class OllamaEngine:
         # formatting rules without touching this logic.
         self.system_prompt = S.FORMATTER_PROMPT
 
-    def process(self, text):
+    def process(self, text, system_prompt=None):
+
+        # Caller (the LLM socket) can pass a custom prompt - e.g. one
+        # the user edited in Settings. Fall back to the default.
+        instructions = system_prompt or self.system_prompt
 
         prompt = f"""
-{self.system_prompt}
+{instructions}
 
 Transcript:
 

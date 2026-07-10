@@ -93,3 +93,56 @@ class Recorder:
         print(f"Saved {self.output_file}")
 
         return str(self.output_file)
+
+    # --- streaming support -------------------------------------------
+
+    def drain_chunk(
+        self,
+        output_file,
+        silence_threshold: int = 0,
+        wait_for_pause: bool = False,
+        max_seconds: float = 0,
+    ):
+        """Take all audio captured since the last drain and write it to
+        output_file. Used by streaming mode every few seconds.
+
+        wait_for_pause: if the user is mid-sentence (the last ~0.3s is
+        loud), hold the audio and return None - the next drain gets it.
+        This stops words being cut in half at chunk boundaries. The
+        max_seconds cap guarantees we never hold audio forever.
+
+        Returns the file path, or None if there was nothing to write
+        (no frames yet, silence, or we're waiting for a pause).
+        """
+        if wait_for_pause and self.stream is not None and len(self.frames) > 0:
+            held = sum(len(f) for f in self.frames) / self.sample_rate
+            if max_seconds == 0 or held < max_seconds:
+                tail_samples = int(0.3 * self.sample_rate)
+                tail = np.concatenate(self.frames[-8:], axis=0)[-tail_samples:]
+                if np.abs(tail).max() >= silence_threshold:
+                    # Still talking - don't cut a word in half.
+                    return None
+
+        # Swap the list out atomically so we never fight with the
+        # PortAudio callback that keeps appending in another thread.
+        frames, self.frames = self.frames, []
+
+        if len(frames) == 0:
+            return None
+
+        audio = np.concatenate(frames, axis=0)
+
+        if silence_threshold and np.abs(audio).max() < silence_threshold:
+            return None
+
+        sf.write(output_file, audio, self.sample_rate)
+
+        return str(output_file)
+
+    def close(self):
+        """Stop the microphone WITHOUT writing a file. Streaming mode
+        uses this: chunks were already written by drain_chunk()."""
+        if self.stream is not None:
+            self.stream.stop()
+            self.stream.close()
+            self.stream = None
