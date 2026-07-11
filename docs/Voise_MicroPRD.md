@@ -210,23 +210,21 @@ Swapping implementations should require changing the socket provider, not the GU
 
 ---
 
-## Current State (2026-07-10)
+## Current State (2026-07-11)
 
-Implemented:
-- GUI (single main page)
-- Recorder (bulk mode)
-- Whisper integration (blocking, on Stop)
-- Ollama integration (background thread, GC race fixed)
-- OT1 / OT2 layout, Copy buttons
-- strings.py — all user-facing text + formatter prompt in one editable file
+Implemented (all Phase 1 must-haves; streaming verified headlessly, awaiting live-mic check):
+- Socket abstraction: Recorder / STT / LLM sockets with live `info` dicts
+- whisper-server provider (model loaded once, <1s per chunk; whisper-cli fallback for bulk)
+- Bulk mode and Streaming mode with live OT1 (pause-aware chunking, silence gate, hallucination filter)
+- All slow work in background threads (task_worker, GC-safe thread registry)
+- Status row (provider · model · state · latency for STT and LLM) + recording indicator
+- Collapsible Developer Panel (Recorder / STT / LLM / Pipeline)
+- Settings page: editable formatter prompt, protected default, reset; stored in settings.json (gitignored)
+- Manual OT2 via Process button (no auto-run)
+- Tunables in config.py (chunk seconds, port, silence threshold)
 
 Missing:
-- Socket abstraction (was built, then reverted with the threading breakage — needs re-applying with the GC fix)
-- Background STT (UI currently freezes during transcription)
-- Provider/model visibility, developer panel
-- Settings page (editable system prompt with protected default)
-- Streaming transcription / chunked audio / live OT1
-- Recording status indicator
+- Export (Phase 2 / Obsidian)
 
 ---
 

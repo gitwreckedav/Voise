@@ -17,6 +17,15 @@ Keep a reference to the returned thread (e.g. self.thread = ...).
 
 from PySide6.QtCore import QObject, QThread, Signal
 
+# Every running thread is parked here until it truly finishes.
+# Two crashes hide behind this set:
+# 1. If nobody holds a reference, Python garbage-collects the QThread
+#    WHILE IT RUNS and Qt aborts the whole app (SIGABRT).
+# 2. Callers like streaming reassign their thread attribute every few
+#    seconds (self.stt_thread = run_in_background(...)), dropping the
+#    previous thread possibly before it finished winding down.
+_active_threads = set()
+
 
 class _Worker(QObject):
     """Wraps a function so Qt can run it inside a QThread."""
@@ -48,18 +57,20 @@ def run_in_background(fn, on_done, on_error):
     worker.finished.connect(on_done)
     worker.error.connect(on_error)
 
-    # Tidy up: stop the thread and free the worker once done.
+    # Tidy up: stop the thread's event loop once the work is done.
     worker.finished.connect(thread.quit)
     worker.error.connect(thread.quit)
-    worker.finished.connect(worker.deleteLater)
-    worker.error.connect(worker.deleteLater)
-    thread.finished.connect(thread.deleteLater)
 
     # CRITICAL: pin the worker to the thread object so Python's
     # garbage collector cannot destroy it before the thread calls
     # run(). Without this line, whether anything happened at all was
     # a race - the bug that froze the app on 2026-07-10.
     thread.worker = worker
+
+    # Park the thread in the registry until it genuinely finishes;
+    # only then may Python reclaim it (see note on _active_threads).
+    _active_threads.add(thread)
+    thread.finished.connect(lambda: _active_threads.discard(thread))
 
     thread.start()
     return thread

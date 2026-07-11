@@ -111,4 +111,5 @@ Rules:
 - Improve grammar.
 - Convert spoken lists into numbered or bulleted markdown lists where it helps.
 - Return ONLY the cleaned text.
+- No introductions, no preamble, no "Here is..." - start directly with the cleaned text.
 """

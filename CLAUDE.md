@@ -10,8 +10,8 @@ Read before writing any code: `@docs/Voise_MicroPRD.md`
 
 ## Current State
 
-Implemented: GUI, Recorder (bulk), Whisper integration (blocking), Ollama integration (threaded, GC race fixed), OT1/OT2 layout, strings.py.
-Missing: socket abstraction (built then reverted — re-apply with GC fix), background STT, provider/model visibility, developer panel, Settings page (editable prompt with protected default), streaming transcription, live OT1, recording indicator.
+Implemented: full Phase 1 feature set — socket abstraction (sockets/), whisper-server engine (model stays loaded; CLI fallback for bulk), bulk + streaming modes with live OT1, pause-aware chunking + hallucination filter, background threads (task_worker with GC-safe registry), status row + collapsible developer panel, Settings page (editable formatter prompt with protected default in strings.py, saved to gitignored settings.json), recording indicator, config.py knobs.
+Missing: export to file (Phase 2 / Obsidian), OT1 latency display polish. Awaiting AV's live-mic verification of streaming mode.
 Note: OT2 is generated MANUALLY (Process button). Do not auto-run the formatter — AV's spec.
 
 This section goes stale fast at this stage of the project. Update it every time something moves from Missing to Implemented - don't let it drift.
