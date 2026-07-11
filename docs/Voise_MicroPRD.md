@@ -223,8 +223,22 @@ Implemented (all Phase 1 must-haves; streaming verified headlessly, awaiting liv
 - Manual OT2 via Process button (no auto-run)
 - Tunables in config.py (chunk seconds, port, silence threshold)
 
+v0.2 additions (beyond the original Phase 1 spec):
+- Production dark theme, one QSS file (ui/theme.py)
+- Typewriter effect: OT1/OT2 text lands character-by-character, adaptive speed
+- Voice commands (streaming mode, say the phrase then pause):
+  - "stop recording" / "stop listening" -> stop the take
+  - "clean it up" / "process this" -> stop AND run the formatter
+  - Phrase lists live in config.py; command words are stripped from OT1
+  - Clarification: OT2 stays user-triggered - a spoken request is a manual trigger
+- Smarter transcription: custom vocabulary (Settings) is hinted to Whisper on
+  every call; streaming chunks also receive the tail of what was already said
+  as context, improving consistency and rare-word spelling
+- Export .md button (saves OT2, or OT1 if OT2 empty) - Phase 2 stepping stone
+- Elapsed recording clock, Copied/Exported button feedback
+
 Missing:
-- Export (Phase 2 / Obsidian)
+- Obsidian vault integration (Phase 2)
 
 ---
 

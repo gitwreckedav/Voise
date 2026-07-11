@@ -35,6 +35,19 @@ SILENCE_THRESHOLD = 500
 # many seconds - a hard cap on how far OT1 can lag behind your voice.
 MAX_CHUNK_SECONDS = 6.0
 
+# Voice commands: if a streaming chunk ENDS with one of these phrases,
+# Voise acts on it instead of writing it into the transcript.
+# Say the command, then pause - it must be the last thing in a chunk.
+STOP_COMMANDS = [
+    "stop recording",
+    "stop listening",
+]
+PROCESS_COMMANDS = [      # stops recording AND runs the formatter
+    "clean it up",
+    "process this",
+    "process the transcript",
+]
+
 # Whisper invents these phrases when fed silence or breath noise.
 # If a streaming chunk comes back as EXACTLY one of these, we drop it.
 # (Full bulk recordings are never filtered.)
@@ -82,6 +95,16 @@ class SettingsStore:
     def reset_system_prompt(self) -> None:
         data = self._load()
         data["system_prompt"] = ""
+        self._save(data)
+
+    # --- custom vocabulary (names, jargon Whisper tends to mishear) ---
+
+    def get_vocabulary(self) -> str:
+        return self._load().get("vocabulary", "").strip()
+
+    def set_vocabulary(self, text: str) -> None:
+        data = self._load()
+        data["vocabulary"] = text.strip()
         self._save(data)
 
     def _load(self) -> dict:

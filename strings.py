@@ -26,9 +26,17 @@ STOP_RECORDING = "Stop Recording"
 PROCESS = "Process"
 COPY_RAW = "Copy Raw"
 COPY_PROCESSED = "Copy Processed"
+COPIED = "Copied ✓"
 CLEAR = "Clear"
+EXPORT_MD = "Export .md"
+EXPORT_TITLE = "Export note as Markdown"
+EXPORTED = "Exported ✓"
 SETTINGS_BUTTON = "Settings"
 BACK_BUTTON = "< Back"
+
+# --- Voice command feedback ---
+HEARD_COMMAND = "Heard: “{phrase}”"
+VOICE_HINT = "Voice: say “stop recording” to stop, or “clean it up” to stop + format."
 
 # --- Recording indicator ---
 REC_INDICATOR_ON = "● REC"      # filled dot: mic is live
@@ -80,6 +88,12 @@ SAVE_PROMPT = "Save"
 RESET_PROMPT = "Reset to Default"
 PROMPT_SAVED = "Saved. Using your custom prompt."
 PROMPT_IS_DEFAULT = "Using the built-in default prompt."
+VOCAB_TITLE = "Custom vocabulary"
+VOCAB_HINT = (
+    "Names and jargon Whisper tends to mishear (e.g. Voise, Obsidian, "
+    "your name). Comma-separated. They are hinted to Whisper on every "
+    "transcription so it spells them correctly."
+)
 
 # --- Errors ---
 ERR_STT_SERVER = (

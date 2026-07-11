@@ -50,6 +50,7 @@ class DevPanel(QWidget):
             box = QGroupBox(title)
             box_layout = QVBoxLayout(box)
             label = QLabel("-")
+            label.setObjectName("mono")
             label.setWordWrap(True)
             box_layout.addWidget(label)
             box_layout.addStretch()

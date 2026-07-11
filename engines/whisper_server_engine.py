@@ -112,18 +112,28 @@ class WhisperServerEngine:
 
     # --- transcription ----------------------------------------------
 
-    def transcribe(self, audio_file: str) -> str:
-        """Send a wav file to the server, get plain text back."""
+    def transcribe(self, audio_file: str, prompt: str = "") -> str:
+        """Send a wav file to the server, get plain text back.
+
+        prompt: optional hint text Whisper sees before decoding - we
+        use it for custom vocabulary (names, jargon) and, in streaming
+        mode, the tail of what was already said, so chunks stay
+        consistent and rare words are spelled right.
+        """
         self.ensure_running()
+
+        data = {
+            "response_format": "json",
+            "temperature": "0.0",
+        }
+        if prompt:
+            data["prompt"] = prompt
 
         with open(audio_file, "rb") as f:
             response = requests.post(
                 f"{self.base_url}/inference",
                 files={"file": f},
-                data={
-                    "response_format": "json",
-                    "temperature": "0.0",
-                },
+                data=data,
                 timeout=120,
             )
 

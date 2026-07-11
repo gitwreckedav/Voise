@@ -9,26 +9,36 @@ run_in_background() so the window never freezes.
 
 Recording modes:
 - Bulk:      Start -> talk -> Stop -> whole take transcribed into OT1.
-- Streaming: Start -> talk -> OT1 fills LIVE while you speak. A QTimer
-             drains an audio chunk from the recorder every couple of
-             seconds and sends it to the STT socket in the background.
+- Streaming: Start -> talk -> OT1 fills LIVE while you speak, typed out
+             character by character (see ui/typewriter.py). Voice
+             commands work here too: say "stop recording" to stop, or
+             "clean it up" to stop AND run the formatter.
 
-OT2 is always MANUAL: the user clicks Process. No auto-run (PRD rule).
+OT2 is user-triggered only - by the Process button or by a spoken
+command. It never runs on its own (PRD rule).
 """
+
+import re
+import time
+from datetime import datetime
+from pathlib import Path
 
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
-    QComboBox, QGroupBox, QHBoxLayout, QLabel, QMainWindow, QPushButton,
-    QStackedWidget, QTextEdit, QVBoxLayout, QWidget
+    QComboBox, QFileDialog, QGroupBox, QHBoxLayout, QLabel, QMainWindow,
+    QPushButton, QStackedWidget, QTextEdit, QVBoxLayout, QWidget
 )
 
 import strings as S
-from config import CHUNK_SECONDS, SettingsStore
+from config import (
+    CHUNK_SECONDS, PROCESS_COMMANDS, STOP_COMMANDS, SettingsStore
+)
 from sockets.llm_socket import LLMSocket
 from sockets.recorder_socket import RecorderSocket
 from sockets.stt_socket import STTSocket
 from ui.dev_panel import DevPanel
+from ui.typewriter import Typewriter
 from workers.task_worker import run_in_background
 
 
@@ -43,8 +53,7 @@ class MainWindow(QMainWindow):
         self.llm = LLMSocket()
         self.settings_store = SettingsStore()
 
-        # Background thread handles (kept as attributes so they are
-        # never garbage-collected mid-run).
+        # Background thread handles.
         self.stt_thread = None
         self.llm_thread = None
         self.warmup_thread = None
@@ -54,15 +63,22 @@ class MainWindow(QMainWindow):
         self.chunk_busy = False     # is a chunk being transcribed right now?
         self.chunk_number = 0       # for "Processing chunk N" display
         self.finishing = False      # Stop pressed, draining the tail
+        self.stream_text = ""       # everything heard so far (context for whisper)
+        self.auto_process = False   # spoken "clean it up" -> Process after stop
+        self.record_started = None  # for the elapsed clock
 
         self.setWindowTitle(S.APP_TITLE)
-        self.resize(1000, 900)
+        self.resize(1000, 920)
 
         # --- pages ---
         self.pages = QStackedWidget()
         self.setCentralWidget(self.pages)
         self.pages.addWidget(self._build_main_page())      # index 0
         self.pages.addWidget(self._build_settings_page())  # index 1
+
+        # Typewriters make text land smoothly instead of in blocks.
+        self.ot1_writer = Typewriter(self.transcript)
+        self.ot2_writer = Typewriter(self.processed)
 
         # Streaming: every CHUNK_SECONDS, try to slice off a chunk.
         self.chunk_timer = QTimer(self)
@@ -87,9 +103,17 @@ class MainWindow(QMainWindow):
     # UI construction
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _section(text: str) -> QLabel:
+        label = QLabel(text.upper())
+        label.setObjectName("section")
+        return label
+
     def _build_main_page(self) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
+        layout.setContentsMargins(14, 12, 14, 10)
+        layout.setSpacing(8)
 
         # Top row: engine + mode selectors, Settings on the right.
         row = QHBoxLayout()
@@ -97,7 +121,7 @@ class MainWindow(QMainWindow):
         self.engine = QComboBox()
         self.engine.addItems([self.stt.info["provider"]])
         row.addWidget(self.engine)
-        row.addSpacing(20)
+        row.addSpacing(18)
         row.addWidget(QLabel(S.MODE_LABEL))
         self.mode = QComboBox()
         self.mode.addItems([S.MODE_BULK, S.MODE_STREAMING])
@@ -111,6 +135,7 @@ class MainWindow(QMainWindow):
         # Record buttons.
         row = QHBoxLayout()
         self.start_button = QPushButton(S.START_RECORDING)
+        self.start_button.setObjectName("primary")
         self.stop_button = QPushButton(S.STOP_RECORDING)
         self.stop_button.setEnabled(False)
         self.start_button.clicked.connect(self.start_recording)
@@ -119,52 +144,67 @@ class MainWindow(QMainWindow):
         row.addWidget(self.stop_button)
         layout.addLayout(row)
 
-        # Status row: mic indicator + app status + per-socket summaries.
+        # Status row: mic indicator + elapsed + app status + summaries.
         row = QHBoxLayout()
         self.rec_indicator = QLabel(S.REC_INDICATOR_OFF)
+        self.rec_indicator.setObjectName("recOff")
+        self.elapsed = QLabel("")
+        self.elapsed.setObjectName("muted")
         self.status = QLabel(S.STATUS_READY)
         self.stt_summary = QLabel("")
+        self.stt_summary.setObjectName("muted")
         self.llm_summary = QLabel("")
+        self.llm_summary.setObjectName("muted")
         row.addWidget(self.rec_indicator)
+        row.addWidget(self.elapsed)
+        row.addSpacing(10)
         row.addWidget(self.status)
         row.addStretch()
         row.addWidget(self.stt_summary)
-        row.addSpacing(16)
+        row.addSpacing(14)
         row.addWidget(self.llm_summary)
         layout.addLayout(row)
 
-        layout.addWidget(QLabel(S.RAW_TRANSCRIPT_LABEL))
+        # Voice command hint - visible so the flow is discoverable.
+        hint = QLabel(S.VOICE_HINT)
+        hint.setObjectName("muted")
+        layout.addWidget(hint)
+
+        layout.addWidget(self._section(S.RAW_TRANSCRIPT_LABEL))
         self.transcript = QTextEdit()
-        layout.addWidget(self.transcript)
+        layout.addWidget(self.transcript, stretch=3)
 
         row = QHBoxLayout()
-        row.addWidget(QLabel(S.FORMATTER_LABEL))
-        self.process_button = QPushButton(S.PROCESS)
-        self.process_button.clicked.connect(self.process_transcript)
+        row.addWidget(self._section(S.PROCESSED_OUTPUT_LABEL))
         row.addStretch()
+        self.process_button = QPushButton(S.PROCESS)
+        self.process_button.setObjectName("primary")
+        self.process_button.clicked.connect(self.process_transcript)
         row.addWidget(self.process_button)
         layout.addLayout(row)
 
-        layout.addWidget(QLabel(S.PROCESSED_OUTPUT_LABEL))
         self.processed = QTextEdit()
-        layout.addWidget(self.processed)
+        layout.addWidget(self.processed, stretch=3)
 
         row = QHBoxLayout()
         self.copy_raw = QPushButton(S.COPY_RAW)
         self.copy_processed = QPushButton(S.COPY_PROCESSED)
+        self.export_button = QPushButton(S.EXPORT_MD)
         self.clear = QPushButton(S.CLEAR)
         self.copy_raw.clicked.connect(self.copy_raw_text)
         self.copy_processed.clicked.connect(self.copy_processed_text)
+        self.export_button.clicked.connect(self.export_markdown)
         self.clear.clicked.connect(self.clear_all)
         row.addStretch()
         row.addWidget(self.copy_raw)
         row.addWidget(self.copy_processed)
+        row.addWidget(self.export_button)
         row.addWidget(self.clear)
         layout.addLayout(row)
 
         # Collapsible developer panel at the bottom.
         self.dev_toggle = QPushButton(S.DEV_PANEL_SHOW)
-        self.dev_toggle.setFlat(True)
+        self.dev_toggle.setObjectName("flat")
         self.dev_toggle.clicked.connect(self.toggle_dev_panel)
         layout.addWidget(self.dev_toggle)
         self.dev_panel = DevPanel()
@@ -176,6 +216,8 @@ class MainWindow(QMainWindow):
     def _build_settings_page(self) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
+        layout.setContentsMargins(14, 12, 14, 10)
+        layout.setSpacing(8)
 
         row = QHBoxLayout()
         back = QPushButton(S.BACK_BUTTON)
@@ -197,9 +239,21 @@ class MainWindow(QMainWindow):
         ))
         layout.addWidget(providers)
 
+        # Custom vocabulary for the transcriber.
+        layout.addWidget(self._section(S.VOCAB_TITLE))
+        vocab_hint = QLabel(S.VOCAB_HINT)
+        vocab_hint.setObjectName("muted")
+        vocab_hint.setWordWrap(True)
+        layout.addWidget(vocab_hint)
+        self.vocab_edit = QTextEdit()
+        self.vocab_edit.setMaximumHeight(64)
+        self.vocab_edit.setPlainText(self.settings_store.get_vocabulary())
+        layout.addWidget(self.vocab_edit)
+
         # Editable formatter prompt with a protected default.
-        layout.addWidget(QLabel(S.PROMPT_TITLE))
+        layout.addWidget(self._section(S.PROMPT_TITLE))
         hint = QLabel(S.PROMPT_HINT)
+        hint.setObjectName("muted")
         hint.setWordWrap(True)
         layout.addWidget(hint)
         self.prompt_edit = QTextEdit()
@@ -208,12 +262,14 @@ class MainWindow(QMainWindow):
 
         row = QHBoxLayout()
         self.prompt_state = QLabel("")
+        self.prompt_state.setObjectName("muted")
         row.addWidget(self.prompt_state)
         row.addStretch()
         reset = QPushButton(S.RESET_PROMPT)
         save = QPushButton(S.SAVE_PROMPT)
+        save.setObjectName("primary")
         reset.clicked.connect(self.reset_prompt)
-        save.clicked.connect(self.save_prompt)
+        save.clicked.connect(self.save_settings)
         row.addWidget(reset)
         row.addWidget(save)
         layout.addLayout(row)
@@ -225,14 +281,16 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def open_settings(self):
-        # Show the prompt that is actually in effect right now.
+        # Show what is actually in effect right now.
         self.prompt_edit.setPlainText(self.settings_store.get_system_prompt())
+        self.vocab_edit.setPlainText(self.settings_store.get_vocabulary())
         self._update_prompt_state()
         self.pages.setCurrentIndex(1)
 
-    def save_prompt(self):
+    def save_settings(self):
         self.settings_store.set_system_prompt(self.prompt_edit.toPlainText())
-        # Saving an empty box means "back to default" - reflect that.
+        self.settings_store.set_vocabulary(self.vocab_edit.toPlainText())
+        # Saving an empty prompt means "back to default" - reflect that.
         self.prompt_edit.setPlainText(self.settings_store.get_system_prompt())
         self._update_prompt_state()
 
@@ -261,6 +319,7 @@ class MainWindow(QMainWindow):
             self.status.setText(str(e))
             return
 
+        self.record_started = time.monotonic()
         self.start_button.setEnabled(False)
         self.stop_button.setEnabled(True)
         self.mode.setEnabled(False)
@@ -272,6 +331,8 @@ class MainWindow(QMainWindow):
             self.chunk_busy = False
             self.chunk_number = 0
             self.finishing = False
+            self.stream_text = ""
+            self.auto_process = False
             self.status.setText(S.STATUS_STREAMING)
             self.chunk_timer.start()
         else:
@@ -286,9 +347,15 @@ class MainWindow(QMainWindow):
 
     def _recording_finished(self):
         """Common cleanup once a take (either mode) is fully done."""
+        self.record_started = None
         self.status.setText(S.STATUS_READY)
         self.start_button.setEnabled(True)
         self.mode.setEnabled(True)
+        if self.auto_process:
+            # The user SPOKE the request ("clean it up") - that's a
+            # manual trigger, just voiced. Run the formatter once.
+            self.auto_process = False
+            self.process_transcript()
 
     # ------------------------------------------------------------------
     # Bulk mode
@@ -312,7 +379,8 @@ class MainWindow(QMainWindow):
         )
 
     def bulk_stt_done(self, text):
-        self.transcript.setPlainText(text)
+        self.transcript.clear()
+        self.ot1_writer.feed(text)
         self._recording_finished()
 
     def stt_failed(self, err):
@@ -340,8 +408,9 @@ class MainWindow(QMainWindow):
         self.chunk_busy = True
         self.chunk_number += 1
         n = self.chunk_number
+        context = self.stream_text  # what was said so far, for accuracy
         self.stt_thread = run_in_background(
-            lambda: self.stt.transcribe_chunk(path, n),
+            lambda: self.stt.transcribe_chunk(path, n, context),
             self.chunk_done,
             self.chunk_failed,
         )
@@ -349,9 +418,15 @@ class MainWindow(QMainWindow):
     def chunk_done(self, text):
         self.chunk_busy = False
         if text:
-            # Append to OT1 without clobbering any edits the user made.
-            current = self.transcript.toPlainText()
-            self.transcript.setPlainText((current + " " + text).strip())
+            # A spoken command at the end of the chunk acts on the app
+            # instead of landing in the transcript.
+            action, text, phrase = self._detect_voice_command(text)
+            if text:
+                self.stream_text = (self.stream_text + " " + text).strip()
+                self.ot1_writer.feed(text)
+            if action:
+                self._run_voice_command(action, phrase)
+                return  # _run_voice_command handles what happens next
         self._after_chunk()
 
     def chunk_failed(self, err):
@@ -365,6 +440,7 @@ class MainWindow(QMainWindow):
             self._process_next_chunk()
         elif self.finishing:
             self.finishing = False
+            self.ot1_writer.flush()
             self._recording_finished()
 
     def _stop_streaming(self):
@@ -377,15 +453,51 @@ class MainWindow(QMainWindow):
         if not self.chunk_busy and not self.chunk_queue:
             # Nothing left in flight - we're already done.
             self.finishing = False
+            self.ot1_writer.flush()
             self._recording_finished()
         else:
             self._process_next_chunk()
 
     # ------------------------------------------------------------------
-    # Formatter (manual, per PRD)
+    # Voice commands
+    # ------------------------------------------------------------------
+
+    def _detect_voice_command(self, text):
+        """If the chunk ENDS with a spoken command, return
+        (action, text-without-the-command, matched-phrase)."""
+        for action, phrases in (
+            ("process", PROCESS_COMMANDS),
+            ("stop", STOP_COMMANDS),
+        ):
+            for phrase in phrases:
+                # Match the phrase however whisper punctuated it, but
+                # only at the very end of the chunk.
+                pattern = (
+                    r"[\s,.!?]*".join(re.escape(w) for w in phrase.split())
+                    + r"[\s,.!?]*$"
+                )
+                m = re.search(pattern, text, re.IGNORECASE)
+                if m:
+                    return action, text[:m.start()].rstrip(" ,."), phrase
+        return None, text, None
+
+    def _run_voice_command(self, action, phrase):
+        self.status.setText(S.HEARD_COMMAND.format(phrase=phrase))
+        if action == "process":
+            self.auto_process = True
+        # Both commands stop the take. If we're already finishing
+        # (command arrived in the tail chunks), don't stop twice.
+        if self.recorder.is_recording and not self.finishing:
+            self.stop_recording()
+        else:
+            self._after_chunk()
+
+    # ------------------------------------------------------------------
+    # Formatter (user-triggered: button or voice command)
     # ------------------------------------------------------------------
 
     def process_transcript(self):
+        self.ot1_writer.flush()  # make sure OT1 is complete on screen
         txt = self.transcript.toPlainText().strip()
         if not txt:
             return
@@ -398,7 +510,8 @@ class MainWindow(QMainWindow):
         )
 
     def ollama_finished(self, text):
-        self.processed.setPlainText(text)
+        self.processed.clear()
+        self.ot2_writer.feed(text)
         self.process_button.setEnabled(True)
         self.status.setText(S.STATUS_READY)
 
@@ -427,9 +540,20 @@ class MainWindow(QMainWindow):
         stt = self.stt.info
         llm = self.llm.info
 
+        recording = self.recorder.is_recording
         self.rec_indicator.setText(
-            S.REC_INDICATOR_ON if self.recorder.is_recording else S.REC_INDICATOR_OFF
+            S.REC_INDICATOR_ON if recording else S.REC_INDICATOR_OFF
         )
+        self.rec_indicator.setObjectName("recOn" if recording else "recOff")
+        # Re-apply the stylesheet rule for the changed objectName.
+        self.rec_indicator.style().polish(self.rec_indicator)
+
+        if recording and self.record_started is not None:
+            secs = int(time.monotonic() - self.record_started)
+            self.elapsed.setText(f"{secs // 60}:{secs % 60:02d}")
+        else:
+            self.elapsed.setText("")
+
         stt_bits = f"{S.DEV_STT}: {stt['provider']} · {stt['model']} · {stt['status']}"
         if stt["latency"]:
             stt_bits += f" ({stt['latency']})"
@@ -463,18 +587,53 @@ class MainWindow(QMainWindow):
         ]
 
     # ------------------------------------------------------------------
-    # Clipboard / housekeeping
+    # Clipboard / export / housekeeping
     # ------------------------------------------------------------------
 
+    def _flash(self, button, text):
+        """Briefly change a button's label as feedback, then restore."""
+        original = button.text()
+        button.setText(text)
+        QTimer.singleShot(1200, lambda: button.setText(original))
+
     def copy_raw_text(self):
+        self.ot1_writer.flush()
         QGuiApplication.clipboard().setText(self.transcript.toPlainText())
+        self._flash(self.copy_raw, S.COPIED)
 
     def copy_processed_text(self):
+        self.ot2_writer.flush()
         QGuiApplication.clipboard().setText(self.processed.toPlainText())
+        self._flash(self.copy_processed, S.COPIED)
+
+    def export_markdown(self):
+        """Save the note as a .md file - the stepping stone to the
+        Obsidian integration in Phase 2."""
+        self.ot1_writer.flush()
+        self.ot2_writer.flush()
+        text = (
+            self.processed.toPlainText().strip()
+            or self.transcript.toPlainText().strip()
+        )
+        if not text:
+            return
+        default = str(
+            Path.home() / "Documents"
+            / f"voise-{datetime.now():%Y%m%d-%H%M}.md"
+        )
+        path, _ = QFileDialog.getSaveFileName(
+            self, S.EXPORT_TITLE, default, "Markdown (*.md)"
+        )
+        if path:
+            Path(path).write_text(text + "\n")
+            self._flash(self.export_button, S.EXPORTED)
 
     def clear_all(self):
+        self.ot1_writer.flush()
+        self.ot2_writer.flush()
         self.transcript.clear()
         self.processed.clear()
+        self.stream_text = ""
 
     def closeEvent(self, event):
         """App closing: stop the mic and shut down our whisper server."""

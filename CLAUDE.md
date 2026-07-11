@@ -10,9 +10,9 @@ Read before writing any code: `@docs/Voise_MicroPRD.md`
 
 ## Current State
 
-Implemented: full Phase 1 feature set — socket abstraction (sockets/), whisper-server engine (model stays loaded; CLI fallback for bulk), bulk + streaming modes with live OT1, pause-aware chunking + hallucination filter, background threads (task_worker with GC-safe registry), status row + collapsible developer panel, Settings page (editable formatter prompt with protected default in strings.py, saved to gitignored settings.json), recording indicator, config.py knobs.
-Missing: export to file (Phase 2 / Obsidian), OT1 latency display polish. Awaiting AV's live-mic verification of streaming mode.
-Note: OT2 is generated MANUALLY (Process button). Do not auto-run the formatter — AV's spec.
+Implemented: full Phase 1 feature set (sockets, whisper-server engine with CLI fallback, bulk + streaming live OT1, pause-aware chunking, hallucination filter, GC-safe task_worker, status row, dev panel, Settings page with protected default prompt) PLUS v0.2 additions: dark production theme (ui/theme.py, one QSS file), typewriter text effect (ui/typewriter.py) on OT1/OT2, voice commands in streaming mode ("stop recording" stops; "clean it up" stops + runs formatter; phrases in config.py), custom vocabulary hints to Whisper (Settings, stored in settings.json) + rolling context prompt across streaming chunks, Export .md button (Phase 2 stepping stone), elapsed recording clock, Copied ✓ feedback.
+Missing: Obsidian vault integration (Phase 2).
+Note: OT2 is USER-TRIGGERED only (Process button or spoken command). Never runs on its own — AV's spec.
 
 This section goes stale fast at this stage of the project. Update it every time something moves from Missing to Implemented - don't let it drift.
 

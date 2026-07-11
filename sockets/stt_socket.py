@@ -15,7 +15,7 @@ Provider today: whisper.cpp, in two flavours behind the same socket:
 import time
 
 import strings as S
-from config import HALLUCINATION_TEXTS
+from config import HALLUCINATION_TEXTS, SettingsStore
 from engines.whisper_engine import WhisperEngine
 from engines.whisper_server_engine import WhisperServerEngine
 
@@ -25,6 +25,7 @@ class STTSocket:
     def __init__(self):
         self._server = WhisperServerEngine()
         self._cli = WhisperEngine()
+        self._settings = SettingsStore()
 
         # Live state for the status row / developer panel.
         self.info = {
@@ -52,21 +53,39 @@ class STTSocket:
             self.info["current_op"] = ""
         return ""
 
+    def _build_prompt(self, context: str = "") -> str:
+        """Whisper 'sees' this text before decoding. Custom vocabulary
+        fixes misheard names; recent context keeps chunks consistent."""
+        parts = []
+        vocab = self._settings.get_vocabulary()
+        if vocab:
+            parts.append(f"Glossary: {vocab}.")
+        if context:
+            # Only the tail - whisper's prompt window is small.
+            parts.append(context[-200:])
+        return " ".join(parts)
+
     def transcribe(self, audio_file: str) -> str:
         """Bulk mode: whole recording -> text. Falls back to the CLI
         if the server is down, so bulk always works."""
         self.info["current_op"] = S.OP_TRANSCRIBE_BULK
+        prompt = self._build_prompt()
         try:
-            return self._timed(lambda: self._server.transcribe(audio_file))
+            return self._timed(
+                lambda: self._server.transcribe(audio_file, prompt)
+            )
         except Exception:
             # Server trouble - do it the slow, reliable way.
             return self._timed(lambda: self._cli.transcribe(audio_file))
 
-    def transcribe_chunk(self, audio_file: str, chunk_number: int) -> str:
+    def transcribe_chunk(
+        self, audio_file: str, chunk_number: int, context: str = ""
+    ) -> str:
         """Streaming mode: one small chunk -> text. Server only - the
         CLI is far too slow to keep up with live speech."""
         self.info["current_op"] = S.OP_TRANSCRIBE_CHUNK.format(n=chunk_number)
-        text = self._timed(lambda: self._server.transcribe(audio_file))
+        prompt = self._build_prompt(context)
+        text = self._timed(lambda: self._server.transcribe(audio_file, prompt))
         # Whisper hallucinates stock phrases on silence/breath chunks;
         # drop them so OT1 stays honest. (Bulk mode is never filtered.)
         if text.strip() in HALLUCINATION_TEXTS:
