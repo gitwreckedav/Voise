@@ -11,15 +11,49 @@ Two jobs:
 """
 
 import json
+import shutil
+import sys
 from pathlib import Path
 
 import strings as S
 
+# --- Where Voise keeps its files -----------------------------------
+# Running from source: right here in the project folder.
+# Running as a packaged .app: the app bundle is read-only, so we use
+# the standard macOS location instead (~/Library/Application Support).
+if getattr(sys, "frozen", False):
+    DATA_DIR = Path.home() / "Library" / "Application Support" / "Voise"
+else:
+    DATA_DIR = Path(__file__).parent
+
+RUNTIME_DIR = DATA_DIR / "runtime"
+RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def find_binary(name: str):
+    """Locate a command like whisper-server. GUI apps launched from
+    Finder do NOT inherit the terminal's PATH, so after checking PATH
+    we also look in Homebrew's usual folders."""
+    found = shutil.which(name)
+    if found:
+        return found
+    for candidate in (f"/opt/homebrew/bin/{name}", f"/usr/local/bin/{name}"):
+        if Path(candidate).exists():
+            return candidate
+    return None
+
+
 # --- Tunable knobs -------------------------------------------------
 
-# How often (seconds) streaming mode slices off audio and sends it to
-# Whisper. Smaller = snappier OT1 but more requests; bigger = laggier.
-CHUNK_SECONDS = 2.5
+# Streaming: how often (seconds) we CHECK whether it's a good moment
+# to cut a chunk. Checking is cheap - chunks are only actually cut at
+# a pause in speech, so a small value here means the app reacts fast
+# the moment you stop talking (that's also what makes voice commands
+# feel responsive).
+CHUNK_CHECK_SECONDS = 0.4
+
+# Never cut a chunk shorter than this (tiny clips transcribe badly)...
+MIN_CHUNK_SECONDS = 1.0
 
 # Local port for our private whisper.cpp server. Only reachable from
 # this machine (127.0.0.1) - nothing leaves the device.
@@ -30,10 +64,20 @@ WHISPER_SERVER_PORT = 8178
 # words out of room noise.
 SILENCE_THRESHOLD = 500
 
-# Streaming waits for a brief pause in speech before slicing a chunk,
-# so words don't get cut in half. But it never waits longer than this
-# many seconds - a hard cap on how far OT1 can lag behind your voice.
+# ...and never hold audio longer than this while waiting for a pause -
+# a hard cap on how far OT1 can lag behind your voice.
 MAX_CHUNK_SECONDS = 6.0
+
+# Spoken punctuation: say the phrase on the left, the transcript gets
+# the symbol on the right. E.g. "open bracket for future context
+# close bracket" -> "(for future context)". Edit freely.
+SPOKEN_REPLACEMENTS = {
+    "open bracket": "(",
+    "close bracket": ")",
+    "open paren": "(",
+    "close paren": ")",
+    "new paragraph": "\n\n",
+}
 
 # Voice commands: if a streaming chunk ENDS with one of these phrases,
 # Voise acts on it instead of writing it into the transcript.
@@ -64,7 +108,7 @@ HALLUCINATION_TEXTS = {
 
 # --- User settings -------------------------------------------------
 
-_SETTINGS_FILE = Path(__file__).parent / "settings.json"
+_SETTINGS_FILE = DATA_DIR / "settings.json"
 
 
 class SettingsStore:

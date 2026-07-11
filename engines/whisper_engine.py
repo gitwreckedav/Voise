@@ -5,6 +5,8 @@ Whisper transcription engine.
 import subprocess
 from pathlib import Path
 
+from config import find_binary
+
 
 class WhisperEngine:
 
@@ -24,7 +26,9 @@ class WhisperEngine:
 
         subprocess.run(
             [
-                "whisper-cli",
+                # Full path lookup: a packaged .app doesn't inherit
+                # the terminal's PATH, so plain "whisper-cli" fails.
+                find_binary("whisper-cli") or "whisper-cli",
                 "-m",
                 str(self.model),
                 "-f",

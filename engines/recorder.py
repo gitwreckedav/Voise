@@ -4,11 +4,11 @@ recorder.py
 Records microphone audio until stop() is called.
 """
 
-from pathlib import Path
-
 import numpy as np
 import sounddevice as sd
 import soundfile as sf
+
+from config import RUNTIME_DIR
 
 
 class Recorder:
@@ -21,11 +21,7 @@ class Recorder:
         self.stream = None
         self.frames = []
 
-        self.output_file = (
-            Path(__file__).parent.parent
-            / "runtime"
-            / "recording.wav"
-        )
+        self.output_file = RUNTIME_DIR / "recording.wav"
 
         # Find an input device
         default = sd.default.device
@@ -101,21 +97,22 @@ class Recorder:
         output_file,
         silence_threshold: int = 0,
         wait_for_pause: bool = False,
+        min_seconds: float = 0,
         max_seconds: float = 0,
     ):
-        """Take all audio captured since the last drain and write it to
-        output_file. Used by streaming mode every few seconds.
+        """Take the audio captured since the last drain and write it to
+        output_file. Streaming mode calls this several times a second;
+        a chunk is only actually cut when the user pauses (or the
+        max_seconds cap is hit), so words never split mid-syllable and
+        the app reacts within ~half a second of you going quiet.
 
-        wait_for_pause: if the user is mid-sentence (the last ~0.3s is
-        loud), hold the audio and return None - the next drain gets it.
-        This stops words being cut in half at chunk boundaries. The
-        max_seconds cap guarantees we never hold audio forever.
-
-        Returns the file path, or None if there was nothing to write
-        (no frames yet, silence, or we're waiting for a pause).
+        Returns the file path, or None if nothing was cut this time
+        (too little audio, still mid-sentence, or pure silence).
         """
         if wait_for_pause and self.stream is not None and len(self.frames) > 0:
             held = sum(len(f) for f in self.frames) / self.sample_rate
+            if held < min_seconds:
+                return None
             if max_seconds == 0 or held < max_seconds:
                 tail_samples = int(0.3 * self.sample_rate)
                 tail = np.concatenate(self.frames[-8:], axis=0)[-tail_samples:]
@@ -132,8 +129,14 @@ class Recorder:
 
         audio = np.concatenate(frames, axis=0)
 
-        if silence_threshold and np.abs(audio).max() < silence_threshold:
-            return None
+        # Loudness check on the 99.5th percentile, not the absolute
+        # peak: one keyboard click can't disguise silence as speech.
+        # Silent chunks are consumed and discarded, so Whisper never
+        # sees them (feeding it silence makes it hallucinate).
+        if silence_threshold:
+            loudness = np.percentile(np.abs(audio), 99.5)
+            if loudness < silence_threshold:
+                return None
 
         sf.write(output_file, audio, self.sample_rate)
 

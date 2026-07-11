@@ -8,13 +8,13 @@ audio. Supports both modes from the PRD:
 - Streaming: start() ... drain_chunk() every few seconds ... stop_streaming()
 """
 
-from pathlib import Path
-
 import strings as S
-from config import MAX_CHUNK_SECONDS, SILENCE_THRESHOLD
+from config import (
+    MAX_CHUNK_SECONDS, MIN_CHUNK_SECONDS, RUNTIME_DIR, SILENCE_THRESHOLD
+)
 from engines.recorder import Recorder
 
-_RUNTIME = Path(__file__).parent.parent / "runtime"
+_RUNTIME = RUNTIME_DIR
 
 
 class RecorderSocket:
@@ -67,6 +67,7 @@ class RecorderSocket:
             path,
             SILENCE_THRESHOLD,
             wait_for_pause=True,
+            min_seconds=MIN_CHUNK_SECONDS,
             max_seconds=MAX_CHUNK_SECONDS,
         )
         if result is not None:

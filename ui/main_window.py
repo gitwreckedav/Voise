@@ -32,7 +32,7 @@ from PySide6.QtWidgets import (
 
 import strings as S
 from config import (
-    CHUNK_SECONDS, PROCESS_COMMANDS, STOP_COMMANDS, SettingsStore
+    CHUNK_CHECK_SECONDS, PROCESS_COMMANDS, STOP_COMMANDS, SettingsStore
 )
 from sockets.llm_socket import LLMSocket
 from sockets.recorder_socket import RecorderSocket
@@ -80,9 +80,11 @@ class MainWindow(QMainWindow):
         self.ot1_writer = Typewriter(self.transcript)
         self.ot2_writer = Typewriter(self.processed)
 
-        # Streaming: every CHUNK_SECONDS, try to slice off a chunk.
+        # Streaming: check several times a second whether the user has
+        # paused - chunks are cut the moment they do, which is what
+        # makes live text and voice commands feel responsive.
         self.chunk_timer = QTimer(self)
-        self.chunk_timer.setInterval(int(CHUNK_SECONDS * 1000))
+        self.chunk_timer.setInterval(int(CHUNK_CHECK_SECONDS * 1000))
         self.chunk_timer.timeout.connect(self.on_chunk_tick)
 
         # Transparency: refresh the status row + developer panel a few
@@ -421,6 +423,9 @@ class MainWindow(QMainWindow):
             # A spoken command at the end of the chunk acts on the app
             # instead of landing in the transcript.
             action, text, phrase = self._detect_voice_command(text)
+            # Whisper sometimes re-emits text it already produced
+            # (classic on near-silent chunks) - drop the repetition.
+            text = self._dedup(text)
             if text:
                 self.stream_text = (self.stream_text + " " + text).strip()
                 self.ot1_writer.feed(text)
@@ -428,6 +433,42 @@ class MainWindow(QMainWindow):
                 self._run_voice_command(action, phrase)
                 return  # _run_voice_command handles what happens next
         self._after_chunk()
+
+    @staticmethod
+    def _norm_words(text: str) -> list:
+        """Lowercase words with punctuation stripped - for comparing
+        what was SAID regardless of how Whisper punctuated it."""
+        return [
+            w for w in re.sub(r"[^a-z0-9' ]", " ", text.lower()).split() if w
+        ]
+
+    def _dedup(self, text: str) -> str:
+        """Remove the part of a new chunk that repeats what's already
+        in the transcript (Whisper echo on pauses)."""
+        new_norm = self._norm_words(text)
+        if not new_norm:
+            return text
+        tail_norm = self._norm_words(self.stream_text[-500:])
+        if not tail_norm:
+            return text
+        # Whole chunk already said? Drop it entirely.
+        joined_tail = " ".join(tail_norm)
+        if " ".join(new_norm) in joined_tail:
+            return ""
+        # Otherwise trim a repeated prefix (up to 15 words of overlap).
+        tokens = list(re.finditer(r"\S+", text))
+        token_norms = [self._norm_words(t.group()) for t in tokens]
+        flat = []  # (token_index, normalized_word)
+        for i, words in enumerate(token_norms):
+            flat.extend((i, w) for w in words)
+        max_k = min(len(flat), len(tail_norm), 15)
+        for k in range(max_k, 0, -1):
+            if tail_norm[-k:] == [w for _, w in flat[:k]]:
+                cut_token = flat[k - 1][0] + 1
+                if cut_token >= len(tokens):
+                    return ""
+                return text[tokens[cut_token].start():]
+        return text
 
     def chunk_failed(self, err):
         # One bad chunk shouldn't kill the session: show it and move on.

@@ -16,7 +16,6 @@ This module knows NOTHING about Qt.
 """
 
 import atexit
-import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -24,7 +23,7 @@ from pathlib import Path
 import requests
 
 import strings as S
-from config import WHISPER_SERVER_PORT
+from config import RUNTIME_DIR, WHISPER_SERVER_PORT, find_binary
 
 
 class WhisperServerEngine:
@@ -71,16 +70,13 @@ class WhisperServerEngine:
             return
 
         if self._proc is None or self._proc.poll() is not None:
-            binary = shutil.which("whisper-server")
+            binary = find_binary("whisper-server")
             if binary is None or not self.model.exists():
                 raise RuntimeError(S.ERR_STT_SERVER)
 
             # Server chatter goes to a log file in runtime/ so the
             # developer can inspect it, not into our terminal.
-            log = open(
-                Path(__file__).parent.parent / "runtime" / "whisper_server.log",
-                "wb",
-            )
+            log = open(RUNTIME_DIR / "whisper_server.log", "wb")
             self._proc = subprocess.Popen(
                 [
                     binary,

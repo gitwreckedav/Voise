@@ -12,10 +12,11 @@ Provider today: whisper.cpp, in two flavours behind the same socket:
   server won't start, bulk transcription still works.
 """
 
+import re
 import time
 
 import strings as S
-from config import HALLUCINATION_TEXTS, SettingsStore
+from config import HALLUCINATION_TEXTS, SPOKEN_REPLACEMENTS, SettingsStore
 from engines.whisper_engine import WhisperEngine
 from engines.whisper_server_engine import WhisperServerEngine
 
@@ -53,6 +54,29 @@ class STTSocket:
             self.info["current_op"] = ""
         return ""
 
+    @staticmethod
+    def _apply_spoken_replacements(text: str) -> str:
+        """Turn spoken phrases like "open bracket" into their symbol,
+        however Whisper capitalised or punctuated them."""
+        for phrase, symbol in SPOKEN_REPLACEMENTS.items():
+            pattern = (
+                r"[\s,.!?]*\b"
+                + r"[\s,-]+".join(re.escape(w) for w in phrase.split())
+                + r"\b[\s,.!?]*"
+            )
+            if symbol == "(":
+                replacement = " ("        # opening: space before, none after
+            elif symbol == ")":
+                replacement = ") "        # closing: none before, space after
+            else:
+                replacement = symbol
+            text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+        # Tidy the seams: no space inside brackets, no double spaces.
+        text = re.sub(r"\(\s+", "(", text)
+        text = re.sub(r"\s+\)", ")", text)
+        text = re.sub(r"[ \t]{2,}", " ", text)
+        return text.strip()
+
     def _build_prompt(self, context: str = "") -> str:
         """Whisper 'sees' this text before decoding. Custom vocabulary
         fixes misheard names; recent context keeps chunks consistent."""
@@ -71,12 +95,13 @@ class STTSocket:
         self.info["current_op"] = S.OP_TRANSCRIBE_BULK
         prompt = self._build_prompt()
         try:
-            return self._timed(
+            text = self._timed(
                 lambda: self._server.transcribe(audio_file, prompt)
             )
         except Exception:
             # Server trouble - do it the slow, reliable way.
-            return self._timed(lambda: self._cli.transcribe(audio_file))
+            text = self._timed(lambda: self._cli.transcribe(audio_file))
+        return self._apply_spoken_replacements(text)
 
     def transcribe_chunk(
         self, audio_file: str, chunk_number: int, context: str = ""
@@ -90,7 +115,7 @@ class STTSocket:
         # drop them so OT1 stays honest. (Bulk mode is never filtered.)
         if text.strip() in HALLUCINATION_TEXTS:
             return ""
-        return text
+        return self._apply_spoken_replacements(text)
 
     def shutdown(self) -> None:
         """Called when the app closes - stops the whisper server."""
