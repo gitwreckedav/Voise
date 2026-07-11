@@ -237,6 +237,17 @@ v0.2 additions (beyond the original Phase 1 spec):
 - Export .md button (saves OT2, or OT1 if OT2 empty) - Phase 2 stepping stone
 - Elapsed recording clock, Copied/Exported button feedback
 
+v0.3 (responsiveness + packaging):
+- Streaming re-architected: pause-detection every 0.4s (was fixed 2.5s slices) -
+  chunks cut the moment you stop talking; voice commands respond in ~1-2s
+- Duplicate-echo fix: percentile-based silence gate + transcript-overlap dedup
+  (Whisper echoes its context prompt on near-silent chunks; both ends now guarded)
+- Spoken punctuation: "open bracket ... close bracket" -> (...), "new paragraph"
+  -> paragraph break; mapping editable in config.py (SPOKEN_REPLACEMENTS)
+- Native macOS packaging: scripts/build_app.sh -> dist/Voise.app + versioned DMG
+  (PyInstaller; mic-permission Info.plist; Homebrew binary discovery for GUI apps;
+  frozen builds store data in ~/Library/Application Support/Voise/)
+
 Missing:
 - Obsidian vault integration (Phase 2)
 

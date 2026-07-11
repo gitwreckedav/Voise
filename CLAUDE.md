@@ -36,8 +36,11 @@ docs/Voise_MicroPRD.md      detailed spec (source of truth)
 ## Commands
 
 ```
-.venv/bin/python app.py     # run the app (venv already has PySide6 etc.)
+.venv/bin/python app.py     # run from source (venv already has PySide6 etc.)
+scripts/build_app.sh        # package: dist/Voise.app + dist/Voise-<ver>.dmg
 ```
+
+Packaging notes: version lives in config.py (APP_VERSION — bump per release); custom icon = drop 1024x1024 PNG at assets/icon.png and rebuild; packaged app stores runtime/settings in ~/Library/Application Support/Voise/; dist/ and build/ are gitignored (source in git, binaries rebuilt on demand).
 
 External dependencies expected on the machine:
 - `whisper-cli` on PATH (Homebrew) + model at `~/local_AI/whisper/models/ggml-large-v3-turbo.bin`
