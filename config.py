@@ -17,6 +17,10 @@ from pathlib import Path
 
 import strings as S
 
+# Shown in the packaged app's About info and used to name the DMG.
+# Bump when shipping a new build (scripts/build_app.sh).
+APP_VERSION = "0.3.0"
+
 # --- Where Voise keeps its files -----------------------------------
 # Running from source: right here in the project folder.
 # Running as a packaged .app: the app bundle is read-only, so we use

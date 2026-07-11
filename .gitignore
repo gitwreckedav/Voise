@@ -7,3 +7,8 @@ ui/temp/
 .aider*
 *.zip
 settings.json
+build/
+dist/
+assets/icon.icns
+assets/icon.iconset/
+assets/icon_source.png
