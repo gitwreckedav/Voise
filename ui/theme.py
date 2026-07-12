@@ -276,6 +276,9 @@ QFrame#themeRow {{
     border: 1px solid {border};
     border-radius: 8px;
 }}
+QFrame#themeRow:hover {{
+    border-color: {border_lit};
+}}
 QFrame#themeRow[selected="true"] {{
     border-color: {accent};
 }}
