@@ -26,7 +26,16 @@ DMG="dist/Voise-${VERSION}.dmg"
 
 echo "==> ${DMG}"
 rm -f "$DMG"
-hdiutil create -volname "Voise" -srcfolder "dist/Voise.app" -ov -format UDZO "$DMG" > /dev/null
+# Retry: on CI runners macOS's file scanner sometimes holds the fresh
+# .app briefly, making hdiutil fail once with "Resource busy".
+for attempt in 1 2 3 4 5; do
+    if hdiutil create -volname "Voise" -srcfolder "dist/Voise.app" -ov -format UDZO "$DMG" > /dev/null; then
+        break
+    fi
+    echo "hdiutil busy (attempt $attempt), retrying in 5s..."
+    sleep 5
+    [ "$attempt" = "5" ] && exit 1
+done
 
 echo ""
 echo "Done:"
