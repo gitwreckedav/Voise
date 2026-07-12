@@ -19,13 +19,13 @@ import strings as S
 
 # Shown in the packaged app's About info and used to name the DMG.
 # Bump when shipping a new build (scripts/build_app.sh).
-APP_VERSION = "0.4.0"
+APP_VERSION = "0.4.1"
 
 # GitHub repo for the update check ("owner/repo"). The app asks
 # api.github.com for the latest release tag - ONLY metadata, only if
 # update checking is enabled in Settings, nothing else ever leaves
-# the device. Fill this in after creating the repo.
-GITHUB_REPO = "CHANGE_ME/Voise"
+# the device.
+GITHUB_REPO = "gitwreckedav/Voise"
 
 # Default local model for the whisper socket. The user can point this
 # anywhere from Settings -> AI Setup (BYOAI).
