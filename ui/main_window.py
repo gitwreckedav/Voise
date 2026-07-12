@@ -33,7 +33,8 @@ from PySide6.QtWidgets import (
 
 import strings as S
 from config import (
-    APP_VERSION, CHUNK_CHECK_SECONDS, GITHUB_REPO, SettingsStore
+    APP_VERSION, CHUNK_CHECK_SECONDS, GITHUB_REPO,
+    TYPEWRITER_CATCHUP_DIVISOR, TYPEWRITER_INTERVAL_MS, SettingsStore
 )
 from sockets.llm_socket import LLMSocket
 from sockets.recorder_socket import RecorderSocket
@@ -80,8 +81,13 @@ class MainWindow(QMainWindow):
         self.pages.addWidget(self._build_settings_page())  # index 1
 
         # Typewriters make text land smoothly instead of in blocks.
-        self.ot1_writer = Typewriter(self.transcript)
-        self.ot2_writer = Typewriter(self.processed)
+        # Speed knobs live in config.py.
+        self.ot1_writer = Typewriter(
+            self.transcript, TYPEWRITER_INTERVAL_MS, TYPEWRITER_CATCHUP_DIVISOR
+        )
+        self.ot2_writer = Typewriter(
+            self.processed, TYPEWRITER_INTERVAL_MS, TYPEWRITER_CATCHUP_DIVISOR
+        )
 
         # Streaming: check several times a second whether the user has
         # paused - chunks are cut the moment they do, which is what
@@ -746,14 +752,19 @@ class MainWindow(QMainWindow):
             ("stop", self.settings_store.get_stop_phrases()),
         ):
             for phrase in phrases:
-                # Match the phrase however whisper punctuated it, but
-                # only at the very end of the chunk.
+                # Match the phrase however whisper punctuated it, at
+                # (or near) the end of the chunk: up to two stray
+                # words may follow, because Whisper often tacks on a
+                # "now" or a hallucinated "Thank you." after you stop.
                 pattern = (
-                    r"[\s,.!?]*".join(re.escape(w) for w in phrase.split())
-                    + r"[\s,.!?]*$"
+                    r"\b"
+                    + r"[\s,.!?]*".join(re.escape(w) for w in phrase.split())
+                    + r"[\s,.!?]*(?:[\w']+[\s,.!?]*){0,2}$"
                 )
                 m = re.search(pattern, text, re.IGNORECASE)
                 if m:
+                    # Everything from the phrase onward is command +
+                    # trailing noise - none of it belongs in OT1.
                     return action, text[:m.start()].rstrip(" ,."), phrase
         return None, text, None
 

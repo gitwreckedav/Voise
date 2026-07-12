@@ -94,14 +94,24 @@ SILENCE_THRESHOLD = 500
 # a hard cap on how far OT1 can lag behind your voice.
 MAX_CHUNK_SECONDS = 6.0
 
+# Typewriter feel: interval = ms between ticks; higher divisor =
+# slower, calmer typing (chars per tick = waiting text / divisor).
+TYPEWRITER_INTERVAL_MS = 18
+TYPEWRITER_CATCHUP_DIVISOR = 55
+
 # Spoken punctuation: say the phrase on the left, the transcript gets
 # the symbol on the right. E.g. "open bracket for future context
-# close bracket" -> "(for future context)". Edit freely.
+# close bracket" -> "(for future context)". Plural/singular variants
+# included because Whisper hears both. Edit freely.
 SPOKEN_REPLACEMENTS = {
     "open bracket": "(",
+    "open brackets": "(",
     "close bracket": ")",
+    "close brackets": ")",
     "open paren": "(",
+    "open parenthesis": "(",
     "close paren": ")",
+    "close parenthesis": ")",
     "new paragraph": "\n\n",
 }
 

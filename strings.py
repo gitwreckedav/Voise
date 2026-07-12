@@ -124,9 +124,8 @@ DICTATION_CHEATSHEET = (
     "speak naturally; Whisper adds most of it."
 )
 COMMANDS_INTRO = (
-    "Commands: say one of these at the END of a sentence, then pause "
-    "briefly. Voise acts on it instead of typing it. Edit the phrases "
-    "if you prefer your own words (comma-separated)."
+    "Say one of these, then pause briefly — Voise acts on it instead "
+    "of typing it. Phrases are editable (comma-separated)."
 )
 STOP_PHRASES_LABEL = "Stop the recording:"
 PROCESS_PHRASES_LABEL = "Stop AND run the formatter:"
@@ -144,8 +143,8 @@ PROMPT_TITLE = "Formatter Prompt"
 ABOUT_TITLE = "About & Updates"
 VERSION_LABEL = "Voise v{version}"
 CHECK_UPDATES_TOGGLE = (
-    "Check GitHub for new versions on launch (sends nothing but the "
-    "version request; your audio and text never leave this Mac)"
+    "Check GitHub for new versions on launch (version info only — "
+    "audio and text never leave this Mac)"
 )
 CHECK_NOW = "Check for updates"
 UPDATE_AVAILABLE = "Update available: {version}"
@@ -154,10 +153,8 @@ UP_TO_DATE = "You're on the latest version."
 UPDATE_CHECK_FAILED = "Could not reach GitHub (offline?)."
 UPDATE_NOT_CONFIGURED = "No repo configured yet (config.py GITHUB_REPO)."
 PROMPT_HINT = (
-    "This is the instruction sent to the local LLM along with your raw "
-    "transcript. Edit it to change how the Processed Output comes out. "
-    "The built-in default can never be deleted — Reset always brings it back. "
-    "Saving an empty box also restores the default."
+    "The instruction sent to the local LLM along with your raw "
+    "transcript. Edit it to change how the Processed Output comes out."
 )
 SAVE_PROMPT = "Save"
 RESET_PROMPT = "Reset to Default"

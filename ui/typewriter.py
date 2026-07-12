@@ -16,9 +16,10 @@ from PySide6.QtGui import QTextCursor
 
 class Typewriter:
 
-    def __init__(self, text_edit, interval_ms: int = 12):
+    def __init__(self, text_edit, interval_ms: int = 18, catchup_divisor: int = 55):
         self._edit = text_edit
         self._buffer = ""
+        self._catchup = catchup_divisor
         self._timer = QTimer(text_edit)
         self._timer.setInterval(interval_ms)
         self._timer.timeout.connect(self._tick)
@@ -51,9 +52,9 @@ class Typewriter:
         if not self._buffer:
             self._timer.stop()
             return
-        # Adaptive: at least 2 chars per tick, much more if we're
-        # behind - smoothness must never turn into extra lag.
-        count = max(2, len(self._buffer) // 25)
+        # Adaptive: normally types calmly, speeds up only when a lot
+        # of text is waiting so it never falls far behind the speech.
+        count = max(1, len(self._buffer) // self._catchup)
         piece, self._buffer = self._buffer[:count], self._buffer[count:]
         self._insert(piece)
 
