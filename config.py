@@ -72,10 +72,14 @@ def find_binary(name: str):
 CHUNK_CHECK_SECONDS = 0.25
 
 # How much trailing quiet (seconds) counts as "the user paused".
-PAUSE_TAIL_SECONDS = 0.25
+# Below 0.3 the app cuts at breath-gaps mid-sentence, producing tiny
+# low-context chunks that Whisper transcribes badly. Speed must come
+# from checking often, never from cutting eagerly.
+PAUSE_TAIL_SECONDS = 0.3
 
-# Never cut a chunk shorter than this (tiny clips transcribe badly)...
-MIN_CHUNK_SECONDS = 1.0
+# Never cut a chunk shorter than this. Whisper's accuracy depends on
+# context: 2s of audio transcribes far better than 1s.
+MIN_CHUNK_SECONDS = 2.0
 
 # Local port for our private whisper.cpp server. Only reachable from
 # this machine (127.0.0.1) - nothing leaves the device.

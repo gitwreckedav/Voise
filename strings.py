@@ -134,7 +134,7 @@ VOCAB_INTRO = (
     "Custom vocabulary: words Whisper keeps getting wrong — names, "
     "brands, jargon. List them here (comma-separated) and Whisper is "
     "reminded of the correct spelling on every transcription.\n"
-    "Example:  Akshit, Voise, Obsidian, OT1, OT2"
+    "Example:  your name, Voise, Obsidian, OT1, OT2"
 )
 
 # Section: Formatter prompt

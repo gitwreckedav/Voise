@@ -679,18 +679,23 @@ class MainWindow(QMainWindow):
         tail_norm = self._norm_words(self.stream_text[-500:])
         if not tail_norm:
             return text
-        # Whole chunk already said? Drop it entirely.
+        # Whole chunk already said? Drop it - but only for chunks of
+        # 4+ words. Short repeats ("yes yes", "no no") are often the
+        # user genuinely repeating themselves.
         joined_tail = " ".join(tail_norm)
-        if " ".join(new_norm) in joined_tail:
+        if len(new_norm) >= 4 and " ".join(new_norm) in joined_tail:
             return ""
-        # Otherwise trim a repeated prefix (up to 15 words of overlap).
+        # Otherwise trim a repeated prefix - but only a SUBSTANTIAL one
+        # (3+ words). A 1-2 word "overlap" is usually the user reusing
+        # a common word, not a Whisper echo; trimming those silently
+        # deleted real words (the v0.4 accuracy bug).
         tokens = list(re.finditer(r"\S+", text))
         token_norms = [self._norm_words(t.group()) for t in tokens]
         flat = []  # (token_index, normalized_word)
         for i, words in enumerate(token_norms):
             flat.extend((i, w) for w in words)
         max_k = min(len(flat), len(tail_norm), 15)
-        for k in range(max_k, 0, -1):
+        for k in range(max_k, 2, -1):
             if tail_norm[-k:] == [w for _, w in flat[:k]]:
                 cut_token = flat[k - 1][0] + 1
                 if cut_token >= len(tokens):

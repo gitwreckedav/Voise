@@ -82,11 +82,6 @@ class WhisperServerEngine:
                     "-m", str(self.model),
                     "--host", "127.0.0.1",
                     "--port", str(WHISPER_SERVER_PORT),
-                    # Greedy decoding: single candidate instead of
-                    # ranking several. Slightly less polish, roughly
-                    # a third faster - right trade for live streaming.
-                    "-bs", "1",
-                    "-bo", "1",
                 ],
                 stdout=log,
                 stderr=subprocess.STDOUT,
