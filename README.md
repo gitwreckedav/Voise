@@ -54,8 +54,13 @@ connection status and walks through both:
 
 Download the latest DMG from
 [Releases](https://github.com/gitwreckedav/Voise/releases/latest), drag
-Voise.app to Applications. The app is unsigned: on first launch,
-right-click → Open, and grant microphone access when prompted.
+Voise.app to Applications.
+
+The app is unsigned, so macOS blocks the first launch of each downloaded
+version. To allow it: open the app once (dismiss the dialog with "Done"),
+then go to **System Settings → Privacy & Security** and click
+**Open Anyway**. Alternatively: `xattr -cr /Applications/Voise.app`.
+Grant microphone access when prompted.
 
 Updates: Voise can check the Releases feed on launch (version metadata
 only; disable anytime in *Settings → About & Updates*) and links you to the
