@@ -10,8 +10,8 @@ Read before writing any code: `@docs/Voise_MicroPRD.md`
 
 ## Current State
 
-Implemented: full Phase 1 feature set (sockets, whisper-server engine with CLI fallback, bulk + streaming live OT1, pause-aware chunking, hallucination filter, GC-safe task_worker, status row, dev panel, Settings page with protected default prompt) PLUS v0.2 additions: dark production theme (ui/theme.py, one QSS file), typewriter text effect (ui/typewriter.py) on OT1/OT2, voice commands in streaming mode ("stop recording" stops; "clean it up" stops + runs formatter; phrases in config.py), custom vocabulary hints to Whisper (Settings, stored in settings.json) + rolling context prompt across streaming chunks, Export .md button (Phase 2 stepping stone), elapsed recording clock, Copied ✓ feedback.
-Missing: Obsidian vault integration (Phase 2).
+Implemented through v0.4: everything from v0.1–0.3 (sockets, whisper-server + CLI fallback, bulk + streaming live OT1, pause-aware chunking, dedup/hallucination guards, typewriter, voice commands, vocab + context prompts, spoken brackets, dark theme, dev panel, .md export, PyInstaller packaging) PLUS v0.4: 3D-depth buttons + styled combo popups (setView(QListView()) required), collapsible Settings sections (ui/collapsible.py), BYOAI — sockets report availability() and Settings→AI Setup guides users to install whisper.cpp/Ollama and pick model path/name (stored in settings.json), editable voice-command phrases, faster streaming (0.25s pause checks, greedy decoding -bs 1 -bo 1), update checker (updater.py → GitHub releases, opt-out toggle, GITHUB_REPO in config.py is CHANGE_ME until AV creates the repo), README/LICENSE(MIT)/requirements.txt/.github release workflow (tag push → DMG on GitHub Releases).
+Missing: Obsidian vault integration (Phase 2); GITHUB_REPO needs filling once repo exists.
 Note: OT2 is USER-TRIGGERED only (Process button or spoken command). Never runs on its own — AV's spec.
 
 This section goes stale fast at this stage of the project. Update it every time something moves from Missing to Implemented - don't let it drift.

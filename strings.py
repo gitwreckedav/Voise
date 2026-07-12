@@ -76,8 +76,83 @@ PIPE_WAITING = "Waiting"
 
 # --- Settings page ---
 SETTINGS_TITLE = "Settings"
-PROVIDERS_TITLE = "Providers (read-only)"
-PROMPT_TITLE = "Formatter prompt"
+SAVE_ALL = "Save Settings"
+SETTINGS_SAVED = "Saved ✓"
+
+# Section: AI Setup (BYOAI)
+AI_SETUP_TITLE = "AI Setup — Bring Your Own AI"
+AI_SETUP_INTRO = (
+    "Voise ships with empty sockets: it contains no AI of its own. "
+    "You plug in local engines that run entirely on your Mac — nothing "
+    "ever leaves this device. Two sockets need filling:"
+)
+STT_SETUP_TITLE = "Speech-to-text socket (whisper.cpp)"
+STT_SETUP_GUIDE = (
+    "1.  Install whisper.cpp:        brew install whisper-cpp\n"
+    "2.  Download a model file (.bin) — search “whisper.cpp ggml models "
+    "Hugging Face”. Good default: ggml-large-v3-turbo.bin (~1.6 GB). "
+    "Smaller Macs: ggml-base.en.bin.\n"
+    "3.  Paste the full path to that .bin file below."
+)
+STT_MODEL_PATH_LABEL = "Whisper model path (.bin file):"
+LLM_SETUP_TITLE = "Formatter socket (Ollama)"
+LLM_SETUP_GUIDE = (
+    "1.  Install Ollama from ollama.com/download and open it once.\n"
+    "2.  In Terminal, pull a small model:        ollama pull llama3.2:3b\n"
+    "3.  Keep Ollama running in the background — Voise talks to it on "
+    "this Mac only (localhost:11434)."
+)
+LLM_MODEL_LABEL = "Ollama model name:"
+SOCKET_CONNECTED = "● Connected — {detail}"
+SOCKET_PROBLEM = "● Not connected: {detail}"
+RECHECK_AI = "Re-check connections"
+SETUP_NEED_WHISPER = "whisper.cpp not found (install with: brew install whisper-cpp)"
+SETUP_NEED_MODEL = "model file not found at the path below"
+SETUP_NEED_OLLAMA = "Ollama is not running (install/open it, see steps below)"
+SETUP_NEED_OLLAMA_MODEL = "model “{model}” not pulled (run: ollama pull {model})"
+SETUP_HINT_STATUS = "AI not fully connected — open Settings → AI Setup"
+MODEL_CHANGE_NOTE = "Model changes apply after restarting Voise."
+
+# Section: Dictation & voice commands
+SPEECH_TITLE = "Dictation & Voice Commands"
+DICTATION_INTRO = "Things you can SAY while dictating, and what they produce:"
+DICTATION_CHEATSHEET = (
+    "“quote unquote”  →  puts the next words in quotes (built into Whisper)\n"
+    "“open bracket … close bracket”  →  (parentheses around your words)\n"
+    "“new paragraph”  →  starts a new paragraph\n"
+    "Normal punctuation — comma, period, question mark — say it or just "
+    "speak naturally; Whisper adds most of it."
+)
+COMMANDS_INTRO = (
+    "Commands: say one of these at the END of a sentence, then pause "
+    "briefly. Voise acts on it instead of typing it. Edit the phrases "
+    "if you prefer your own words (comma-separated)."
+)
+STOP_PHRASES_LABEL = "Stop the recording:"
+PROCESS_PHRASES_LABEL = "Stop AND run the formatter:"
+VOCAB_INTRO = (
+    "Custom vocabulary: words Whisper keeps getting wrong — names, "
+    "brands, jargon. List them here (comma-separated) and Whisper is "
+    "reminded of the correct spelling on every transcription.\n"
+    "Example:  Akshit, Voise, Obsidian, OT1, OT2"
+)
+
+# Section: Formatter prompt
+PROMPT_TITLE = "Formatter Prompt"
+
+# Section: About & updates
+ABOUT_TITLE = "About & Updates"
+VERSION_LABEL = "Voise v{version}"
+CHECK_UPDATES_TOGGLE = (
+    "Check GitHub for new versions on launch (sends nothing but the "
+    "version request; your audio and text never leave this Mac)"
+)
+CHECK_NOW = "Check for updates"
+UPDATE_AVAILABLE = "Update available: {version}"
+UPDATE_DOWNLOAD = "Download {version}"
+UP_TO_DATE = "You're on the latest version."
+UPDATE_CHECK_FAILED = "Could not reach GitHub (offline?)."
+UPDATE_NOT_CONFIGURED = "No repo configured yet (config.py GITHUB_REPO)."
 PROMPT_HINT = (
     "This is the instruction sent to the local LLM along with your raw "
     "transcript. Edit it to change how the Processed Output comes out. "

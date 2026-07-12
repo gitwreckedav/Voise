@@ -19,7 +19,22 @@ import strings as S
 
 # Shown in the packaged app's About info and used to name the DMG.
 # Bump when shipping a new build (scripts/build_app.sh).
-APP_VERSION = "0.3.0"
+APP_VERSION = "0.4.0"
+
+# GitHub repo for the update check ("owner/repo"). The app asks
+# api.github.com for the latest release tag - ONLY metadata, only if
+# update checking is enabled in Settings, nothing else ever leaves
+# the device. Fill this in after creating the repo.
+GITHUB_REPO = "CHANGE_ME/Voise"
+
+# Default local model for the whisper socket. The user can point this
+# anywhere from Settings -> AI Setup (BYOAI).
+DEFAULT_WHISPER_MODEL = str(
+    Path.home() / "local_AI" / "whisper" / "models" / "ggml-large-v3-turbo.bin"
+)
+
+# Default Ollama model for the LLM socket (changeable in Settings).
+DEFAULT_OLLAMA_MODEL = "llama3.2:3b"
 
 # --- Where Voise keeps its files -----------------------------------
 # Running from source: right here in the project folder.
@@ -54,7 +69,10 @@ def find_binary(name: str):
 # a pause in speech, so a small value here means the app reacts fast
 # the moment you stop talking (that's also what makes voice commands
 # feel responsive).
-CHUNK_CHECK_SECONDS = 0.4
+CHUNK_CHECK_SECONDS = 0.25
+
+# How much trailing quiet (seconds) counts as "the user paused".
+PAUSE_TAIL_SECONDS = 0.25
 
 # Never cut a chunk shorter than this (tiny clips transcribe badly)...
 MIN_CHUNK_SECONDS = 1.0
@@ -153,6 +171,57 @@ class SettingsStore:
     def set_vocabulary(self, text: str) -> None:
         data = self._load()
         data["vocabulary"] = text.strip()
+        self._save(data)
+
+    # --- voice command phrases (editable; defaults from config) ------
+
+    @staticmethod
+    def _phrase_list(raw, default):
+        phrases = [p.strip().lower() for p in raw.split(",") if p.strip()]
+        return phrases or list(default)
+
+    def get_stop_phrases(self) -> list:
+        return self._phrase_list(
+            self._load().get("stop_phrases", ""), STOP_COMMANDS
+        )
+
+    def get_process_phrases(self) -> list:
+        return self._phrase_list(
+            self._load().get("process_phrases", ""), PROCESS_COMMANDS
+        )
+
+    def set_command_phrases(self, stop_raw: str, process_raw: str) -> None:
+        data = self._load()
+        data["stop_phrases"] = stop_raw.strip()
+        data["process_phrases"] = process_raw.strip()
+        self._save(data)
+
+    # --- BYOAI: which local models the sockets should use ------------
+
+    def get_whisper_model_path(self) -> str:
+        return self._load().get("whisper_model", "").strip() or DEFAULT_WHISPER_MODEL
+
+    def set_whisper_model_path(self, path: str) -> None:
+        data = self._load()
+        data["whisper_model"] = path.strip()
+        self._save(data)
+
+    def get_ollama_model(self) -> str:
+        return self._load().get("ollama_model", "").strip() or DEFAULT_OLLAMA_MODEL
+
+    def set_ollama_model(self, name: str) -> None:
+        data = self._load()
+        data["ollama_model"] = name.strip()
+        self._save(data)
+
+    # --- update check toggle ------------------------------------------
+
+    def get_check_updates(self) -> bool:
+        return bool(self._load().get("check_updates", True))
+
+    def set_check_updates(self, enabled: bool) -> None:
+        data = self._load()
+        data["check_updates"] = bool(enabled)
         self._save(data)
 
     def _load(self) -> dict:

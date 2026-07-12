@@ -25,15 +25,30 @@ class LLMSocket:
         # Live state for the status row / developer panel.
         self.info = {
             "provider": "Ollama",
-            "model": self._engine.model,
+            "model": self._settings.get_ollama_model(),
             "status": S.STATE_IDLE,
             "current_op": "",
             "last_op": "",
             "latency": "",
         }
 
+    def availability(self):
+        """(ok, problems): is the LLM socket actually usable right now?
+        BYOAI - the user brings their own Ollama + model."""
+        model = self._settings.get_ollama_model()
+        self.info["model"] = model
+        models = self._engine.list_models()
+        if models is None:
+            return False, [S.SETUP_NEED_OLLAMA]
+        if not any(m == model or m.startswith(model + ":") for m in models):
+            return False, [S.SETUP_NEED_OLLAMA_MODEL.format(model=model)]
+        return True, []
+
     def process(self, text: str) -> str:
-        """Clean up a raw transcript using the current system prompt."""
+        """Clean up a raw transcript using the current system prompt
+        and whichever local model the user configured."""
+        model = self._settings.get_ollama_model()
+        self.info["model"] = model
         self.info["status"] = S.STATE_RUNNING
         self.info["current_op"] = S.OP_CLEANING
         started = time.monotonic()
@@ -41,6 +56,7 @@ class LLMSocket:
             result = self._engine.process(
                 text,
                 system_prompt=self._settings.get_system_prompt(),
+                model=model,
             )
         except Exception:
             self.info["status"] = S.STATE_ERROR

@@ -23,20 +23,19 @@ from pathlib import Path
 import requests
 
 import strings as S
-from config import RUNTIME_DIR, WHISPER_SERVER_PORT, find_binary
+from config import (
+    RUNTIME_DIR, WHISPER_SERVER_PORT, SettingsStore, find_binary
+)
 
 
 class WhisperServerEngine:
 
     def __init__(self):
 
-        self.model = (
-            Path.home()
-            / "local_AI"
-            / "whisper"
-            / "models"
-            / "ggml-large-v3-turbo.bin"
-        )
+        # BYOAI: the model path is a user setting (Settings -> AI
+        # Setup), so people plug in whichever whisper model their
+        # machine can handle.
+        self.model = Path(SettingsStore().get_whisper_model_path())
 
         # "ggml-large-v3-turbo.bin" -> "large-v3-turbo" (for display)
         self.model_name = self.model.stem.replace("ggml-", "")
@@ -83,6 +82,11 @@ class WhisperServerEngine:
                     "-m", str(self.model),
                     "--host", "127.0.0.1",
                     "--port", str(WHISPER_SERVER_PORT),
+                    # Greedy decoding: single candidate instead of
+                    # ranking several. Slightly less polish, roughly
+                    # a third faster - right trade for live streaming.
+                    "-bs", "1",
+                    "-bo", "1",
                 ],
                 stdout=log,
                 stderr=subprocess.STDOUT,

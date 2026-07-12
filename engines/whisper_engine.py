@@ -5,20 +5,15 @@ Whisper transcription engine.
 import subprocess
 from pathlib import Path
 
-from config import find_binary
+from config import SettingsStore, find_binary
 
 
 class WhisperEngine:
 
     def __init__(self):
 
-        self.model = (
-            Path.home()
-            / "local_AI"
-            / "whisper"
-            / "models"
-            / "ggml-large-v3-turbo.bin"
-        )
+        # Same user-configured model as the server engine (BYOAI).
+        self.model = Path(SettingsStore().get_whisper_model_path())
 
     def transcribe(self, audio_file):
 

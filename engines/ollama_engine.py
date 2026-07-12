@@ -28,11 +28,24 @@ class OllamaEngine:
         # formatting rules without touching this logic.
         self.system_prompt = S.FORMATTER_PROMPT
 
-    def process(self, text, system_prompt=None):
+    def list_models(self):
+        """Names of models pulled into the local Ollama, or None if
+        Ollama isn't reachable at all."""
+        try:
+            response = requests.get(
+                "http://localhost:11434/api/tags", timeout=3
+            )
+            response.raise_for_status()
+            return [m["name"] for m in response.json().get("models", [])]
+        except requests.RequestException:
+            return None
+
+    def process(self, text, system_prompt=None, model=None):
 
         # Caller (the LLM socket) can pass a custom prompt - e.g. one
         # the user edited in Settings. Fall back to the default.
         instructions = system_prompt or self.system_prompt
+        use_model = model or self.model
 
         prompt = f"""
 {instructions}
@@ -45,7 +58,7 @@ Transcript:
         response = requests.post(
             self.url,
             json={
-                "model": self.model,
+                "model": use_model,
                 "prompt": prompt,
                 "stream": False,
             },

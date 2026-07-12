@@ -74,3 +74,11 @@ def run_in_background(fn, on_done, on_error):
 
     thread.start()
     return thread
+
+
+def shutdown_threads(timeout_ms: int = 3000) -> None:
+    """Give any still-running workers a moment to finish cleanly.
+    Called when the app closes, so Qt never tears down a live thread."""
+    for thread in list(_active_threads):
+        thread.quit()
+        thread.wait(timeout_ms)

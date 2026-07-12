@@ -8,7 +8,7 @@ import numpy as np
 import sounddevice as sd
 import soundfile as sf
 
-from config import RUNTIME_DIR
+from config import PAUSE_TAIL_SECONDS, RUNTIME_DIR
 
 
 class Recorder:
@@ -114,7 +114,7 @@ class Recorder:
             if held < min_seconds:
                 return None
             if max_seconds == 0 or held < max_seconds:
-                tail_samples = int(0.3 * self.sample_rate)
+                tail_samples = int(PAUSE_TAIL_SECONDS * self.sample_rate)
                 tail = np.concatenate(self.frames[-8:], axis=0)[-tail_samples:]
                 if np.abs(tail).max() >= silence_threshold:
                     # Still talking - don't cut a word in half.

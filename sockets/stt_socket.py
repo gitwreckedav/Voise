@@ -14,9 +14,12 @@ Provider today: whisper.cpp, in two flavours behind the same socket:
 
 import re
 import time
+from pathlib import Path
 
 import strings as S
-from config import HALLUCINATION_TEXTS, SPOKEN_REPLACEMENTS, SettingsStore
+from config import (
+    HALLUCINATION_TEXTS, SPOKEN_REPLACEMENTS, SettingsStore, find_binary
+)
 from engines.whisper_engine import WhisperEngine
 from engines.whisper_server_engine import WhisperServerEngine
 
@@ -37,6 +40,22 @@ class STTSocket:
             "last_op": "",
             "latency": "",
         }
+
+    def availability(self):
+        """(ok, problems): is the STT socket actually usable right now?
+        BYOAI - the user brings their own whisper.cpp + model file."""
+        problems = []
+        if (
+            find_binary("whisper-server") is None
+            and find_binary("whisper-cli") is None
+        ):
+            problems.append(S.SETUP_NEED_WHISPER)
+        model_path = self._settings.get_whisper_model_path()
+        if not Path(model_path).exists():
+            problems.append(S.SETUP_NEED_MODEL)
+        else:
+            self.info["model"] = Path(model_path).stem.replace("ggml-", "")
+        return (not problems), problems
 
     def warm_up(self) -> str:
         """Start the whisper server so the first transcription is fast.

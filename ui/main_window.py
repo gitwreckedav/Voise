@@ -23,23 +23,26 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QTimer
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtCore import QTimer, QUrl
+from PySide6.QtGui import QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import (
-    QComboBox, QFileDialog, QGroupBox, QHBoxLayout, QLabel, QMainWindow,
-    QPushButton, QStackedWidget, QTextEdit, QVBoxLayout, QWidget
+    QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit,
+    QListView, QMainWindow, QPushButton, QScrollArea, QStackedWidget,
+    QTextEdit, QVBoxLayout, QWidget
 )
 
 import strings as S
 from config import (
-    CHUNK_CHECK_SECONDS, PROCESS_COMMANDS, STOP_COMMANDS, SettingsStore
+    APP_VERSION, CHUNK_CHECK_SECONDS, GITHUB_REPO, SettingsStore
 )
 from sockets.llm_socket import LLMSocket
 from sockets.recorder_socket import RecorderSocket
 from sockets.stt_socket import STTSocket
+from ui.collapsible import CollapsibleSection
 from ui.dev_panel import DevPanel
 from ui.typewriter import Typewriter
-from workers.task_worker import run_in_background
+from updater import check_for_update
+from workers.task_worker import run_in_background, shutdown_threads
 
 
 class MainWindow(QMainWindow):
@@ -101,6 +104,20 @@ class MainWindow(QMainWindow):
             self.stt.warm_up, self.warmup_done, self.warmup_done
         )
 
+        # BYOAI: check whether both sockets are actually connected and
+        # guide the user to Settings -> AI Setup if not.
+        self.ai_check_thread = run_in_background(
+            self._ai_status_worker, self._launch_ai_status, lambda e: None
+        )
+
+        # Optional update check (Settings toggle; metadata only).
+        self.available_update = None
+        self.update_thread = None
+        if self.settings_store.get_check_updates():
+            self.update_thread = run_in_background(
+                check_for_update, self._update_checked, lambda e: None
+            )
+
     # ------------------------------------------------------------------
     # UI construction
     # ------------------------------------------------------------------
@@ -122,11 +139,15 @@ class MainWindow(QMainWindow):
         row.addWidget(QLabel(S.SPEECH_ENGINE_LABEL))
         self.engine = QComboBox()
         self.engine.addItems([self.stt.info["provider"]])
+        # A QListView view is what lets the stylesheet draw a proper
+        # popup list with hover highlighting (macOS-like behaviour).
+        self.engine.setView(QListView())
         row.addWidget(self.engine)
         row.addSpacing(18)
         row.addWidget(QLabel(S.MODE_LABEL))
         self.mode = QComboBox()
         self.mode.addItems([S.MODE_BULK, S.MODE_STREAMING])
+        self.mode.setView(QListView())
         row.addWidget(self.mode)
         row.addStretch()
         self.settings_button = QPushButton(S.SETTINGS_BUTTON)
@@ -215,11 +236,23 @@ class MainWindow(QMainWindow):
 
         return page
 
+    @staticmethod
+    def _muted(text: str, selectable: bool = False) -> QLabel:
+        label = QLabel(text)
+        label.setObjectName("muted")
+        label.setWordWrap(True)
+        if selectable:
+            label.setTextInteractionFlags(
+                label.textInteractionFlags()
+                | label.textInteractionFlags().TextSelectableByMouse
+            )
+        return label
+
     def _build_settings_page(self) -> QWidget:
         page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(14, 12, 14, 10)
-        layout.setSpacing(8)
+        outer = QVBoxLayout(page)
+        outer.setContentsMargins(14, 12, 14, 10)
+        outer.setSpacing(8)
 
         row = QHBoxLayout()
         back = QPushButton(S.BACK_BUTTON)
@@ -228,39 +261,122 @@ class MainWindow(QMainWindow):
         row.addStretch()
         row.addWidget(QLabel(S.SETTINGS_TITLE))
         row.addStretch()
-        layout.addLayout(row)
+        outer.addLayout(row)
 
-        # Read-only provider overview.
-        providers = QGroupBox(S.PROVIDERS_TITLE)
-        pv = QVBoxLayout(providers)
-        pv.addWidget(QLabel(
-            f"{S.DEV_STT}: {self.stt.info['provider']} · {self.stt.info['model']}"
+        # All sections live inside a scroll area; each one collapses
+        # to just its chevron + name.
+        inner = QWidget()
+        layout = QVBoxLayout(inner)
+        layout.setContentsMargins(0, 0, 6, 0)
+        layout.setSpacing(4)
+        layout.addWidget(CollapsibleSection(
+            S.AI_SETUP_TITLE, self._build_ai_setup_section(), expanded=True
         ))
-        pv.addWidget(QLabel(
-            f"{S.DEV_LLM}: {self.llm.info['provider']} · {self.llm.info['model']}"
+        layout.addWidget(CollapsibleSection(
+            S.SPEECH_TITLE, self._build_speech_section()
         ))
-        layout.addWidget(providers)
+        layout.addWidget(CollapsibleSection(
+            S.PROMPT_TITLE, self._build_prompt_section()
+        ))
+        layout.addWidget(CollapsibleSection(
+            S.ABOUT_TITLE, self._build_about_section()
+        ))
+        layout.addStretch()
 
-        # Custom vocabulary for the transcriber.
-        layout.addWidget(self._section(S.VOCAB_TITLE))
-        vocab_hint = QLabel(S.VOCAB_HINT)
-        vocab_hint.setObjectName("muted")
-        vocab_hint.setWordWrap(True)
-        layout.addWidget(vocab_hint)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(inner)
+        outer.addWidget(scroll)
+
+        row = QHBoxLayout()
+        self.saved_state = QLabel("")
+        self.saved_state.setObjectName("ok")
+        row.addWidget(self.saved_state)
+        row.addStretch()
+        save = QPushButton(S.SAVE_ALL)
+        save.setObjectName("primary")
+        save.clicked.connect(self.save_settings)
+        row.addWidget(save)
+        outer.addLayout(row)
+
+        return page
+
+    def _build_ai_setup_section(self) -> QWidget:
+        box = QWidget()
+        v = QVBoxLayout(box)
+        v.setContentsMargins(20, 2, 0, 8)
+        v.setSpacing(6)
+
+        v.addWidget(self._muted(S.AI_SETUP_INTRO))
+
+        v.addWidget(self._section(S.STT_SETUP_TITLE))
+        self.stt_status = QLabel("…")
+        v.addWidget(self.stt_status)
+        v.addWidget(self._muted(S.STT_SETUP_GUIDE, selectable=True))
+        v.addWidget(self._muted(S.STT_MODEL_PATH_LABEL))
+        self.model_path_edit = QLineEdit(
+            self.settings_store.get_whisper_model_path()
+        )
+        v.addWidget(self.model_path_edit)
+
+        v.addWidget(self._section(S.LLM_SETUP_TITLE))
+        self.llm_status = QLabel("…")
+        v.addWidget(self.llm_status)
+        v.addWidget(self._muted(S.LLM_SETUP_GUIDE, selectable=True))
+        v.addWidget(self._muted(S.LLM_MODEL_LABEL))
+        self.ollama_model_edit = QLineEdit(
+            self.settings_store.get_ollama_model()
+        )
+        v.addWidget(self.ollama_model_edit)
+
+        v.addWidget(self._muted(S.MODEL_CHANGE_NOTE))
+        row = QHBoxLayout()
+        recheck = QPushButton(S.RECHECK_AI)
+        recheck.clicked.connect(self.recheck_ai)
+        row.addWidget(recheck)
+        row.addStretch()
+        v.addLayout(row)
+        return box
+
+    def _build_speech_section(self) -> QWidget:
+        box = QWidget()
+        v = QVBoxLayout(box)
+        v.setContentsMargins(20, 2, 0, 8)
+        v.setSpacing(6)
+
+        v.addWidget(self._muted(S.DICTATION_INTRO))
+        v.addWidget(self._muted(S.DICTATION_CHEATSHEET, selectable=True))
+
+        v.addWidget(self._muted(S.COMMANDS_INTRO))
+        v.addWidget(self._muted(S.STOP_PHRASES_LABEL))
+        self.stop_phrases_edit = QLineEdit(
+            ", ".join(self.settings_store.get_stop_phrases())
+        )
+        v.addWidget(self.stop_phrases_edit)
+        v.addWidget(self._muted(S.PROCESS_PHRASES_LABEL))
+        self.process_phrases_edit = QLineEdit(
+            ", ".join(self.settings_store.get_process_phrases())
+        )
+        v.addWidget(self.process_phrases_edit)
+
+        v.addWidget(self._muted(S.VOCAB_INTRO))
         self.vocab_edit = QTextEdit()
-        self.vocab_edit.setMaximumHeight(64)
+        self.vocab_edit.setMaximumHeight(56)
         self.vocab_edit.setPlainText(self.settings_store.get_vocabulary())
-        layout.addWidget(self.vocab_edit)
+        v.addWidget(self.vocab_edit)
+        return box
 
-        # Editable formatter prompt with a protected default.
-        layout.addWidget(self._section(S.PROMPT_TITLE))
-        hint = QLabel(S.PROMPT_HINT)
-        hint.setObjectName("muted")
-        hint.setWordWrap(True)
-        layout.addWidget(hint)
+    def _build_prompt_section(self) -> QWidget:
+        box = QWidget()
+        v = QVBoxLayout(box)
+        v.setContentsMargins(20, 2, 0, 8)
+        v.setSpacing(6)
+
+        v.addWidget(self._muted(S.PROMPT_HINT))
         self.prompt_edit = QTextEdit()
+        self.prompt_edit.setMinimumHeight(180)
         self.prompt_edit.setPlainText(self.settings_store.get_system_prompt())
-        layout.addWidget(self.prompt_edit)
+        v.addWidget(self.prompt_edit)
 
         row = QHBoxLayout()
         self.prompt_state = QLabel("")
@@ -268,15 +384,36 @@ class MainWindow(QMainWindow):
         row.addWidget(self.prompt_state)
         row.addStretch()
         reset = QPushButton(S.RESET_PROMPT)
-        save = QPushButton(S.SAVE_PROMPT)
-        save.setObjectName("primary")
         reset.clicked.connect(self.reset_prompt)
-        save.clicked.connect(self.save_settings)
         row.addWidget(reset)
-        row.addWidget(save)
-        layout.addLayout(row)
+        v.addLayout(row)
+        return box
 
-        return page
+    def _build_about_section(self) -> QWidget:
+        box = QWidget()
+        v = QVBoxLayout(box)
+        v.setContentsMargins(20, 2, 0, 8)
+        v.setSpacing(6)
+
+        v.addWidget(QLabel(S.VERSION_LABEL.format(version=APP_VERSION)))
+        self.update_toggle = QCheckBox(S.CHECK_UPDATES_TOGGLE)
+        self.update_toggle.setChecked(self.settings_store.get_check_updates())
+        v.addWidget(self.update_toggle)
+
+        row = QHBoxLayout()
+        check = QPushButton(S.CHECK_NOW)
+        check.clicked.connect(self.check_updates_now)
+        row.addWidget(check)
+        self.download_button = QPushButton("")
+        self.download_button.setObjectName("primary")
+        self.download_button.setVisible(False)
+        self.download_button.clicked.connect(self.open_download_page)
+        row.addWidget(self.download_button)
+        row.addStretch()
+        v.addLayout(row)
+        self.update_result = self._muted("")
+        v.addWidget(self.update_result)
+        return box
 
     # ------------------------------------------------------------------
     # Settings page actions
@@ -288,13 +425,104 @@ class MainWindow(QMainWindow):
         self.vocab_edit.setPlainText(self.settings_store.get_vocabulary())
         self._update_prompt_state()
         self.pages.setCurrentIndex(1)
+        self.recheck_ai()
 
     def save_settings(self):
         self.settings_store.set_system_prompt(self.prompt_edit.toPlainText())
         self.settings_store.set_vocabulary(self.vocab_edit.toPlainText())
+        self.settings_store.set_command_phrases(
+            self.stop_phrases_edit.text(),
+            self.process_phrases_edit.text(),
+        )
+        self.settings_store.set_whisper_model_path(self.model_path_edit.text())
+        self.settings_store.set_ollama_model(self.ollama_model_edit.text())
+        self.settings_store.set_check_updates(self.update_toggle.isChecked())
         # Saving an empty prompt means "back to default" - reflect that.
         self.prompt_edit.setPlainText(self.settings_store.get_system_prompt())
         self._update_prompt_state()
+        self.saved_state.setText(S.SETTINGS_SAVED)
+        QTimer.singleShot(1500, lambda: self.saved_state.setText(""))
+        self.recheck_ai()
+
+    # --- BYOAI status ---------------------------------------------------
+
+    def _ai_status_worker(self) -> str:
+        """Runs in a background thread: probe both sockets, return a
+        small encoded report for the UI thread."""
+        stt_ok, stt_problems = self.stt.availability()
+        llm_ok, llm_problems = self.llm.availability()
+        stt_line = (
+            S.SOCKET_CONNECTED.format(
+                detail=f"{self.stt.info['provider']} · {self.stt.info['model']}"
+            ) if stt_ok
+            else S.SOCKET_PROBLEM.format(detail="; ".join(stt_problems))
+        )
+        llm_line = (
+            S.SOCKET_CONNECTED.format(
+                detail=f"{self.llm.info['provider']} · {self.llm.info['model']}"
+            ) if llm_ok
+            else S.SOCKET_PROBLEM.format(detail="; ".join(llm_problems))
+        )
+        return f"{int(stt_ok)}|{stt_line}\x1f{int(llm_ok)}|{llm_line}"
+
+    def _apply_ai_status(self, report: str):
+        for label, part in zip(
+            (self.stt_status, self.llm_status), report.split("\x1f")
+        ):
+            ok, line = part.split("|", 1)
+            label.setText(line)
+            label.setObjectName("ok" if ok == "1" else "recOn")
+            label.style().polish(label)
+
+    def _launch_ai_status(self, report: str):
+        self._apply_ai_status(report)
+        if any(part.startswith("0|") for part in report.split("\x1f")):
+            self.status.setText(S.SETUP_HINT_STATUS)
+
+    def recheck_ai(self):
+        self.stt_status.setText("…")
+        self.llm_status.setText("…")
+        self.ai_check_thread = run_in_background(
+            self._ai_status_worker, self._apply_ai_status, lambda e: None
+        )
+
+    # --- updates ----------------------------------------------------------
+
+    def check_updates_now(self):
+        self.update_result.setText("…")
+        self.update_thread = run_in_background(
+            check_for_update, self._update_checked_manual, self._update_failed
+        )
+
+    def _update_checked(self, result: str):
+        """Silent launch check: only speaks up if there IS an update."""
+        if result:
+            self._show_update(result)
+            self.status.setText(
+                S.UPDATE_AVAILABLE.format(version=result.split("|")[0])
+            )
+
+    def _update_checked_manual(self, result: str):
+        if result:
+            self._show_update(result)
+        elif "CHANGE_ME" in GITHUB_REPO:
+            self.update_result.setText(S.UPDATE_NOT_CONFIGURED)
+        else:
+            self.update_result.setText(S.UP_TO_DATE)
+
+    def _update_failed(self, _err: str):
+        self.update_result.setText(S.UPDATE_CHECK_FAILED)
+
+    def _show_update(self, result: str):
+        version, url = result.split("|", 1)
+        self.available_update = (version, url)
+        self.update_result.setText(S.UPDATE_AVAILABLE.format(version=version))
+        self.download_button.setText(S.UPDATE_DOWNLOAD.format(version=version))
+        self.download_button.setVisible(True)
+
+    def open_download_page(self):
+        if self.available_update:
+            QDesktopServices.openUrl(QUrl(self.available_update[1]))
 
     def reset_prompt(self):
         self.settings_store.reset_system_prompt()
@@ -506,9 +734,11 @@ class MainWindow(QMainWindow):
     def _detect_voice_command(self, text):
         """If the chunk ENDS with a spoken command, return
         (action, text-without-the-command, matched-phrase)."""
+        # Phrases come from settings so the user can pick their own
+        # trigger words (Settings -> Dictation & Voice Commands).
         for action, phrases in (
-            ("process", PROCESS_COMMANDS),
-            ("stop", STOP_COMMANDS),
+            ("process", self.settings_store.get_process_phrases()),
+            ("stop", self.settings_store.get_stop_phrases()),
         ):
             for phrase in phrases:
                 # Match the phrase however whisper punctuated it, but
@@ -685,4 +915,5 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
         self.stt.shutdown()
+        shutdown_threads()
         event.accept()
