@@ -248,6 +248,19 @@ v0.3 (responsiveness + packaging):
   (PyInstaller; mic-permission Info.plist; Homebrew binary discovery for GUI apps;
   frozen builds store data in ~/Library/Application Support/Voise/)
 
+v0.4 (BYOAI + distribution):
+- BYOAI principle made real: Voise ships with empty sockets; Settings -> AI Setup
+  shows live connection status per socket and in-app install steps (whisper.cpp,
+  Ollama), with user-configurable model path / model name
+- Settings page: collapsible chevron sections (AI Setup / Dictation & Voice
+  Commands / Formatter Prompt / About & Updates), one Save
+- Voice command phrases editable in-app; dictation cheatsheet shown in-app
+- Faster streaming: 0.25s pause checks + greedy whisper decoding
+- Visual: gradient-depth buttons, styled dropdown popups
+- Distribution: MIT license, README, requirements.txt, GitHub Actions release
+  workflow (push tag -> DMG on GitHub Releases), in-app update check against
+  GitHub releases (toggleable; metadata only - the sole network touch)
+
 Missing:
 - Obsidian vault integration (Phase 2)
 
