@@ -228,6 +228,16 @@ class SettingsStore:
         data["ollama_model"] = name.strip()
         self._save(data)
 
+    # --- appearance ---------------------------------------------------
+
+    def get_theme(self) -> str:
+        return self._load().get("theme", "").strip()
+
+    def set_theme(self, name: str) -> None:
+        data = self._load()
+        data["theme"] = name
+        self._save(data)
+
     # --- update check toggle ------------------------------------------
 
     def get_check_updates(self) -> bool:

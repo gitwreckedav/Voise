@@ -136,6 +136,12 @@ VOCAB_INTRO = (
     "Example:  your name, Voise, Obsidian, OT1, OT2"
 )
 
+# Section: Appearance
+APPEARANCE_TITLE = "Appearance"
+APPEARANCE_INTRO = "Choose a colour theme, then click Save & Apply."
+SAVE_THEME = "Save & Apply Theme"
+THEME_APPLIED = "Theme applied ✓"
+
 # Section: Formatter prompt
 PROMPT_TITLE = "Formatter Prompt"
 

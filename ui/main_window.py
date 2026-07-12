@@ -26,9 +26,9 @@ from pathlib import Path
 from PySide6.QtCore import QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit,
-    QListView, QMainWindow, QPushButton, QScrollArea, QStackedWidget,
-    QTextEdit, QVBoxLayout, QWidget
+    QApplication, QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QLabel,
+    QLineEdit, QListView, QMainWindow, QPushButton, QScrollArea,
+    QStackedWidget, QTextEdit, QVBoxLayout, QWidget
 )
 
 import strings as S
@@ -41,6 +41,8 @@ from sockets.recorder_socket import RecorderSocket
 from sockets.stt_socket import STTSocket
 from ui.collapsible import CollapsibleSection
 from ui.dev_panel import DevPanel
+from ui.theme import build_stylesheet
+from ui.theme_picker import ThemePicker
 from ui.typewriter import Typewriter
 from updater import check_for_update
 from workers.task_worker import run_in_background, shutdown_threads
@@ -282,6 +284,9 @@ class MainWindow(QMainWindow):
             S.SPEECH_TITLE, self._build_speech_section()
         ))
         layout.addWidget(CollapsibleSection(
+            S.APPEARANCE_TITLE, self._build_appearance_section()
+        ))
+        layout.addWidget(CollapsibleSection(
             S.PROMPT_TITLE, self._build_prompt_section()
         ))
         layout.addWidget(CollapsibleSection(
@@ -371,6 +376,37 @@ class MainWindow(QMainWindow):
         self.vocab_edit.setPlainText(self.settings_store.get_vocabulary())
         v.addWidget(self.vocab_edit)
         return box
+
+    def _build_appearance_section(self) -> QWidget:
+        box = QWidget()
+        v = QVBoxLayout(box)
+        v.setContentsMargins(20, 2, 0, 8)
+        v.setSpacing(6)
+
+        v.addWidget(self._muted(S.APPEARANCE_INTRO))
+        self.theme_picker = ThemePicker(self.settings_store.get_theme())
+        v.addWidget(self.theme_picker)
+
+        row = QHBoxLayout()
+        # "&&": a lone "&" is Qt's shortcut marker and would vanish.
+        apply_btn = QPushButton(S.SAVE_THEME.replace("&", "&&"))
+        apply_btn.setObjectName("primary")
+        apply_btn.clicked.connect(self.apply_theme)
+        row.addWidget(apply_btn)
+        self.theme_state = QLabel("")
+        self.theme_state.setObjectName("ok")
+        row.addWidget(self.theme_state)
+        row.addStretch()
+        v.addLayout(row)
+        return box
+
+    def apply_theme(self):
+        """Save the picked theme and restyle the whole app instantly."""
+        name = self.theme_picker.current()
+        self.settings_store.set_theme(name)
+        QApplication.instance().setStyleSheet(build_stylesheet(name))
+        self.theme_state.setText(S.THEME_APPLIED)
+        QTimer.singleShot(1500, lambda: self.theme_state.setText(""))
 
     def _build_prompt_section(self) -> QWidget:
         box = QWidget()
