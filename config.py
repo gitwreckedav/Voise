@@ -19,7 +19,7 @@ import strings as S
 
 # Shown in the packaged app's About info and used to name the DMG.
 # Bump when shipping a new build (scripts/build_app.sh).
-APP_VERSION = "0.4.1"
+APP_VERSION = "0.5.0"
 
 # GitHub repo for the update check ("owner/repo"). The app asks
 # api.github.com for the latest release tag - ONLY metadata, only if
