@@ -136,6 +136,22 @@ class STTSocket:
             return ""
         return self._apply_spoken_replacements(text)
 
+    def restart_server(self) -> str:
+        """Relaunch whisper-server so saved model/tuning changes take
+        effect. Run in a background thread (model reload takes seconds)."""
+        self.info["status"] = S.STATE_RUNNING
+        self.info["current_op"] = S.OP_LOADING_MODEL
+        try:
+            self._server.restart()
+            self.info["model"] = self._server.model_name
+            self.info["last_op"] = "Server restarted with new settings"
+        except Exception:
+            self.info["last_op"] = "Server unavailable (CLI fallback)"
+        finally:
+            self.info["status"] = S.STATE_IDLE
+            self.info["current_op"] = ""
+        return ""
+
     def shutdown(self) -> None:
         """Called when the app closes - stops the whisper server."""
         self._server.shutdown()

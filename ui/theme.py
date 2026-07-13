@@ -235,6 +235,18 @@ QLineEdit:focus {{
     border-color: {ad};
 }}
 
+/* --- spin boxes (tuning controls) --- */
+QSpinBox, QDoubleSpinBox {{
+    background: {surface};
+    border: 1px solid {border};
+    border-radius: 6px;
+    padding: 4px 6px;
+    selection-background-color: {ad};
+}}
+QSpinBox:focus, QDoubleSpinBox:focus {{
+    border-color: {ad};
+}}
+
 /* --- checkboxes --- */
 QCheckBox {{
     spacing: 8px;

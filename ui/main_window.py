@@ -23,12 +23,12 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QTimer, QUrl
+from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QLabel,
-    QLineEdit, QListView, QMainWindow, QPushButton, QScrollArea,
-    QStackedWidget, QTextEdit, QVBoxLayout, QWidget
+    QApplication, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog,
+    QHBoxLayout, QLabel, QLineEdit, QListView, QMainWindow, QPushButton,
+    QScrollArea, QSpinBox, QStackedWidget, QTextEdit, QVBoxLayout, QWidget
 )
 
 import strings as S
@@ -208,6 +208,12 @@ class MainWindow(QMainWindow):
         row = QHBoxLayout()
         row.addWidget(self._section(S.PROCESSED_OUTPUT_LABEL))
         row.addStretch()
+        # Replace = OT2 rebuilt from OT1. Append = new speech is merged
+        # into the existing OT2 (gather thoughts, then add points).
+        self.process_mode = QComboBox()
+        self.process_mode.addItems([S.PROCESS_MODE_REPLACE, S.PROCESS_MODE_APPEND])
+        self.process_mode.setView(QListView())
+        row.addWidget(self.process_mode)
         self.process_button = QPushButton(S.PROCESS)
         self.process_button.setObjectName("primary")
         self.process_button.clicked.connect(self.process_transcript)
@@ -296,6 +302,9 @@ class MainWindow(QMainWindow):
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
+        # Always reserve the scrollbar's width - otherwise expanding a
+        # section makes the bar pop in and every line of text shifts.
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         scroll.setWidget(inner)
         outer.addWidget(scroll)
 
@@ -340,7 +349,46 @@ class MainWindow(QMainWindow):
         )
         v.addWidget(self.ollama_model_edit)
 
-        v.addWidget(self._muted(S.MODEL_CHANGE_NOTE))
+        # Transcription tuning: the accuracy dials.
+        v.addWidget(self._section(S.TUNING_TITLE))
+        v.addWidget(self._muted(S.TUNING_INTRO))
+
+        row = QHBoxLayout()
+        row.addWidget(self._muted(S.LANG_LABEL))
+        self.lang_edit = QLineEdit(self.settings_store.get_stt_language())
+        self.lang_edit.setFixedWidth(70)
+        row.addWidget(self.lang_edit)
+        row.addSpacing(14)
+        row.addWidget(self._muted(S.BEAM_LABEL))
+        self.beam_spin = QSpinBox()
+        self.beam_spin.setRange(1, 8)
+        self.beam_spin.setValue(self.settings_store.get_beam_size())
+        row.addWidget(self.beam_spin)
+        row.addSpacing(14)
+        row.addWidget(self._muted(S.MIN_CHUNK_LABEL))
+        self.min_chunk_spin = QDoubleSpinBox()
+        self.min_chunk_spin.setRange(0.5, 10.0)
+        self.min_chunk_spin.setSingleStep(0.5)
+        self.min_chunk_spin.setValue(self.settings_store.get_min_chunk())
+        row.addWidget(self.min_chunk_spin)
+        row.addSpacing(14)
+        row.addWidget(self._muted(S.MAX_CHUNK_LABEL))
+        self.max_chunk_spin = QDoubleSpinBox()
+        self.max_chunk_spin.setRange(2.0, 15.0)
+        self.max_chunk_spin.setSingleStep(0.5)
+        self.max_chunk_spin.setValue(self.settings_store.get_max_chunk())
+        row.addWidget(self.max_chunk_spin)
+        row.addSpacing(14)
+        row.addWidget(self._muted(S.SILENCE_LABEL))
+        self.silence_spin = QSpinBox()
+        self.silence_spin.setRange(50, 5000)
+        self.silence_spin.setSingleStep(50)
+        self.silence_spin.setValue(self.settings_store.get_silence_threshold())
+        row.addWidget(self.silence_spin)
+        row.addStretch()
+        v.addLayout(row)
+
+        v.addWidget(self._muted(S.SETTINGS_APPLY_NOTE))
         row = QHBoxLayout()
         recheck = QPushButton(S.RECHECK_AI)
         recheck.clicked.connect(self.recheck_ai)
@@ -479,12 +527,25 @@ class MainWindow(QMainWindow):
         self.settings_store.set_whisper_model_path(self.model_path_edit.text())
         self.settings_store.set_ollama_model(self.ollama_model_edit.text())
         self.settings_store.set_check_updates(self.update_toggle.isChecked())
+        self.settings_store.set_stt_tuning(
+            self.lang_edit.text(),
+            self.beam_spin.value(),
+            self.min_chunk_spin.value(),
+            self.max_chunk_spin.value(),
+            self.silence_spin.value(),
+        )
         # Saving an empty prompt means "back to default" - reflect that.
         self.prompt_edit.setPlainText(self.settings_store.get_system_prompt())
         self._update_prompt_state()
         self.saved_state.setText(S.SETTINGS_SAVED)
         QTimer.singleShot(1500, lambda: self.saved_state.setText(""))
-        self.recheck_ai()
+        # Relaunch whisper-server in the background so the new model /
+        # tuning applies right away, then refresh the status lights.
+        self.restart_thread = run_in_background(
+            self.stt.restart_server,
+            lambda _: self.recheck_ai(),
+            lambda e: self.recheck_ai(),
+        )
 
     # --- BYOAI status ---------------------------------------------------
 
@@ -821,15 +882,23 @@ class MainWindow(QMainWindow):
 
     def process_transcript(self):
         self.ot1_writer.flush()  # make sure OT1 is complete on screen
+        self.ot2_writer.flush()
         txt = self.transcript.toPlainText().strip()
         if not txt:
             return
+        existing = self.processed.toPlainText().strip()
+        append_mode = (
+            self.process_mode.currentText() == S.PROCESS_MODE_APPEND
+            and bool(existing)
+        )
         self.status.setText(S.STATUS_FORMATTING)
         self.process_button.setEnabled(False)
+        if append_mode:
+            work = lambda: self.llm.merge(existing, txt)
+        else:
+            work = lambda: self.llm.process(txt)
         self.llm_thread = run_in_background(
-            lambda: self.llm.process(txt),
-            self.ollama_finished,
-            self.ollama_failed,
+            work, self.ollama_finished, self.ollama_failed
         )
 
     def ollama_finished(self, text):

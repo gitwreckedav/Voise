@@ -19,7 +19,7 @@ import strings as S
 
 # Shown in the packaged app's About info and used to name the DMG.
 # Bump when shipping a new build (scripts/build_app.sh).
-APP_VERSION = "0.6.0"
+APP_VERSION = "0.7.0"
 
 # GitHub repo for the update check ("owner/repo"). The app asks
 # api.github.com for the latest release tag - ONLY metadata, only if
@@ -35,6 +35,13 @@ DEFAULT_WHISPER_MODEL = str(
 
 # Default Ollama model for the LLM socket (changeable in Settings).
 DEFAULT_OLLAMA_MODEL = "llama3.2:3b"
+
+# Transcription tuning defaults (all changeable in Settings -> AI Setup).
+# Pinning the language avoids per-chunk misdetection, a common source
+# of garbled streaming output. Beam 5 is Whisper's accuracy-first
+# decoding; costs a few tenths of a second per chunk on an M-series.
+DEFAULT_STT_LANGUAGE = "en"
+DEFAULT_BEAM_SIZE = 5
 
 # --- Where Voise keeps its files -----------------------------------
 # Running from source: right here in the project folder.
@@ -226,6 +233,49 @@ class SettingsStore:
     def set_ollama_model(self, name: str) -> None:
         data = self._load()
         data["ollama_model"] = name.strip()
+        self._save(data)
+
+    # --- transcription tuning -----------------------------------------
+
+    def get_stt_language(self) -> str:
+        return self._load().get("stt_language", "").strip() or DEFAULT_STT_LANGUAGE
+
+    def get_beam_size(self) -> int:
+        try:
+            return max(1, min(8, int(self._load().get("beam_size"))))
+        except (TypeError, ValueError):
+            return DEFAULT_BEAM_SIZE
+
+    def get_min_chunk(self) -> float:
+        try:
+            return max(0.5, float(self._load().get("min_chunk")))
+        except (TypeError, ValueError):
+            return MIN_CHUNK_SECONDS
+
+    def get_max_chunk(self) -> float:
+        try:
+            return max(2.0, float(self._load().get("max_chunk")))
+        except (TypeError, ValueError):
+            return MAX_CHUNK_SECONDS
+
+    def get_silence_threshold(self) -> int:
+        try:
+            return max(50, int(self._load().get("silence_threshold")))
+        except (TypeError, ValueError):
+            return SILENCE_THRESHOLD
+
+    def set_stt_tuning(
+        self, language: str, beam: int,
+        min_chunk: float, max_chunk: float, silence: int,
+    ) -> None:
+        data = self._load()
+        data.update({
+            "stt_language": language.strip().lower(),
+            "beam_size": beam,
+            "min_chunk": min_chunk,
+            "max_chunk": max_chunk,
+            "silence_threshold": silence,
+        })
         self._save(data)
 
     # --- appearance ---------------------------------------------------

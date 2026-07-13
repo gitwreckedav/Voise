@@ -88,24 +88,52 @@ AI_SETUP_INTRO = (
 )
 STT_SETUP_TITLE = "Speech-to-text socket (whisper.cpp)"
 STT_SETUP_GUIDE = (
-    "1.  Install whisper.cpp:        brew install whisper-cpp\n"
-    "2.  Download a model file (.bin) — search “whisper.cpp ggml models "
-    "Hugging Face”. Good default: ggml-large-v3-turbo.bin (~1.6 GB). "
-    "Smaller Macs: ggml-base.en.bin.\n"
-    "3.  Paste the full path to that .bin file below."
+    "1.  Install whisper.cpp — paste in Terminal:\n"
+    "        brew install whisper-cpp\n"
+    "2.  Download ONE model — paste the line for the size you want:\n"
+    "        Light & fast · 142 MB · English only:\n"
+    "        curl -L -o ~/ggml-base.en.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin\n"
+    "        Balanced · 466 MB · English only:\n"
+    "        curl -L -o ~/ggml-small.en.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin\n"
+    "        Most accurate · 1.6 GB · all languages:\n"
+    "        curl -L -o ~/ggml-large-v3-turbo.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin\n"
+    "3.  Put that file's full path in the box below "
+    "(e.g. /Users/you/ggml-small.en.bin) and Save."
 )
 STT_MODEL_PATH_LABEL = "Whisper model path (.bin file):"
 LLM_SETUP_TITLE = "Formatter socket (Ollama)"
 LLM_SETUP_GUIDE = (
     "1.  Install Ollama from ollama.com/download and open it once.\n"
-    "2.  In Terminal, pull a small model:        ollama pull llama3.2:3b\n"
-    "3.  Keep Ollama running in the background — Voise talks to it on "
-    "this Mac only (localhost:11434)."
+    "2.  Pull ONE model — paste the line for the size you want:\n"
+    "        Light · 1.3 GB:      ollama pull llama3.2:1b\n"
+    "        Balanced · 2 GB:     ollama pull llama3.2:3b\n"
+    "        Stronger · 4.7 GB:   ollama pull qwen2.5:7b\n"
+    "3.  Type that model's name in the box below, exactly as pulled. "
+    "Keep Ollama running — Voise talks to it on this Mac only."
 )
 LLM_MODEL_LABEL = "Ollama model name:"
+
+# Transcription tuning
+TUNING_TITLE = "Transcription tuning"
+TUNING_INTRO = (
+    "If accuracy feels off, tune these. Beam size: higher = more "
+    "accurate, slightly slower (5 recommended). Language: two-letter "
+    "code like en — pinning it helps a lot with accents; \"auto\" "
+    "detects per chunk and is less reliable. Longer chunks transcribe "
+    "more accurately but update the transcript less often."
+)
+LANG_LABEL = "Language"
+BEAM_LABEL = "Beam size"
+MIN_CHUNK_LABEL = "Min chunk (s)"
+MAX_CHUNK_LABEL = "Max chunk (s)"
+SILENCE_LABEL = "Silence threshold"
 SOCKET_CONNECTED = "● Connected — {detail}"
 SOCKET_PROBLEM = "● Not connected: {detail}"
 RECHECK_AI = "Re-check connections"
+SETTINGS_APPLY_NOTE = (
+    "Saving restarts the local Whisper server, so model and tuning "
+    "changes apply immediately."
+)
 SETUP_NEED_WHISPER = "whisper.cpp not found (install with: brew install whisper-cpp)"
 SETUP_NEED_MODEL = "model file not found at the path below"
 SETUP_NEED_OLLAMA = "Ollama is not running (install/open it, see steps below)"
@@ -184,24 +212,44 @@ ERR_NO_RECORDING = "Recording was never started."
 OP_TRANSCRIBE_BULK = "Transcribing recording"
 OP_TRANSCRIBE_CHUNK = "Processing chunk {n}"
 OP_CLEANING = "Cleaning transcript"
+OP_MERGING = "Merging new material"
 OP_LOADING_MODEL = "Loading model"
 
-# --- LLM formatting prompt (the non-deletable default) ---
-# This is the instruction sent to the local LLM along with the raw
-# transcript. The user can override it from Settings, but this default
-# always exists in code and can always be restored.
+# --- Process modes ---
+PROCESS_MODE_REPLACE = "Replace output"
+PROCESS_MODE_APPEND = "Append new (merge)"
+
+# --- LLM formatting prompt (the built-in default) ---
+# Sent to the local LLM along with the raw transcript. The user can
+# override it from Settings; this default can always be restored.
 FORMATTER_PROMPT = """
-You are a transcript formatter.
+You are a transcript editor. Turn a raw spoken transcript into clear, well-structured text.
 
 Rules:
 
-- Do NOT summarize.
-- Do NOT invent information.
-- Preserve meaning exactly - no context loss from the original speech.
-- Correct spelling.
-- Correct punctuation.
-- Improve grammar.
-- Convert spoken lists into numbered or bulleted markdown lists where it helps.
-- Return ONLY the cleaned text.
-- No introductions, no preamble, no "Here is..." - start directly with the cleaned text.
+- Fix spelling, punctuation, and grammar.
+- Organize into paragraphs and numbered or bulleted lists where it helps.
+- Condense rambling and drop filler words, but keep every distinct point, detail, and example - no information may be lost.
+- Do not invent anything that was not said.
+- Output only the final text - no introductions, no preamble.
 """
+
+# --- LLM merge prompt (Append mode) ---
+# Used when the user processes NEW speech into an EXISTING output:
+# the LLM integrates the new material instead of overwriting.
+MERGE_PROMPT = """
+You maintain a running document built from voice notes. You receive the existing document and a new raw transcript.
+
+Rules:
+
+- Clean the new transcript: spelling, punctuation, grammar, structure.
+- Integrate it sensibly and chronologically: extend existing lists where the new material continues them, otherwise add new points or sections at the end.
+- Keep the existing document's content intact - only extend or complete it.
+- Do not invent anything that was not said.
+- Output ONLY the full updated document - no introductions, no preamble.
+"""
+
+MERGE_INPUT_TEMPLATE = (
+    "Existing document:\n\n{document}\n\n"
+    "New transcript to integrate:\n\n{transcript}"
+)

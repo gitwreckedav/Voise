@@ -44,6 +44,33 @@ class LLMSocket:
             return False, [S.SETUP_NEED_OLLAMA_MODEL.format(model=model)]
         return True, []
 
+    def merge(self, existing_document: str, new_transcript: str) -> str:
+        """Append mode: integrate freshly spoken material into the
+        already-processed output instead of overwriting it."""
+        model = self._settings.get_ollama_model()
+        self.info["model"] = model
+        self.info["status"] = S.STATE_RUNNING
+        self.info["current_op"] = S.OP_MERGING
+        started = time.monotonic()
+        try:
+            result = self._engine.process(
+                S.MERGE_INPUT_TEMPLATE.format(
+                    document=existing_document, transcript=new_transcript
+                ),
+                system_prompt=S.MERGE_PROMPT,
+                model=model,
+            )
+        except Exception:
+            self.info["status"] = S.STATE_ERROR
+            self.info["last_op"] = S.OP_MERGING + " (failed)"
+            self.info["current_op"] = ""
+            raise
+        self.info["latency"] = f"{time.monotonic() - started:.1f}s"
+        self.info["last_op"] = S.OP_MERGING
+        self.info["current_op"] = ""
+        self.info["status"] = S.STATE_IDLE
+        return result
+
     def process(self, text: str) -> str:
         """Clean up a raw transcript using the current system prompt
         and whichever local model the user configured."""

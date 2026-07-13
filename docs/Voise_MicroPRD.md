@@ -60,6 +60,10 @@ Panel.
   names and domain terms
 - Duplicate-echo and hallucination guards on silent or near-silent audio
 - Manual, user-triggered formatting only — OT2 never regenerates on its own
+- Two processing modes: replace (rebuild the output from the transcript) and
+  append (new speech is merged chronologically into the existing output)
+- User-tunable transcription: language pinning, beam width, chunk sizing,
+  silence threshold — applied live via an automatic engine restart
 - Markdown export
 - Native .app / DMG packaging; tagged releases build automatically via CI
   and running apps surface an update notification

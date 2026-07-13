@@ -69,20 +69,36 @@ class WhisperServerEngine:
             return
 
         if self._proc is None or self._proc.poll() is not None:
+            # Re-read user settings on every (re)start so a model or
+            # tuning change in Settings applies without relaunching
+            # the whole app.
+            store = SettingsStore()
+            self.model = Path(store.get_whisper_model_path())
+            self.model_name = self.model.stem.replace("ggml-", "")
+
             binary = find_binary("whisper-server")
             if binary is None or not self.model.exists():
                 raise RuntimeError(S.ERR_STT_SERVER)
+
+            command = [
+                binary,
+                "-m", str(self.model),
+                "--host", "127.0.0.1",
+                "--port", str(WHISPER_SERVER_PORT),
+                # Beam search width: the accuracy/speed dial.
+                "-bs", str(store.get_beam_size()),
+                "-bo", str(store.get_beam_size()),
+            ]
+            language = store.get_stt_language()
+            if language and language != "auto":
+                # Pinning the language avoids per-chunk misdetection.
+                command += ["-l", language]
 
             # Server chatter goes to a log file in runtime/ so the
             # developer can inspect it, not into our terminal.
             log = open(RUNTIME_DIR / "whisper_server.log", "wb")
             self._proc = subprocess.Popen(
-                [
-                    binary,
-                    "-m", str(self.model),
-                    "--host", "127.0.0.1",
-                    "--port", str(WHISPER_SERVER_PORT),
-                ],
+                command,
                 stdout=log,
                 stderr=subprocess.STDOUT,
             )
@@ -103,7 +119,17 @@ class WhisperServerEngine:
         """Stop the server, but only if we were the ones who started it."""
         if self._proc is not None and self._proc.poll() is None:
             self._proc.terminate()
-            self._proc = None
+            try:
+                self._proc.wait(5)
+            except subprocess.TimeoutExpired:
+                self._proc.kill()
+        self._proc = None
+
+    def restart(self) -> None:
+        """Apply new model/tuning settings by relaunching the server."""
+        self.shutdown()
+        time.sleep(0.3)  # let the port free up
+        self.ensure_running()
 
     # --- transcription ----------------------------------------------
 

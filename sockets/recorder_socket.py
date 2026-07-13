@@ -9,9 +9,7 @@ audio. Supports both modes from the PRD:
 """
 
 import strings as S
-from config import (
-    MAX_CHUNK_SECONDS, MIN_CHUNK_SECONDS, RUNTIME_DIR, SILENCE_THRESHOLD
-)
+from config import RUNTIME_DIR, SettingsStore
 from engines.recorder import Recorder
 
 _RUNTIME = RUNTIME_DIR
@@ -22,6 +20,10 @@ class RecorderSocket:
     def __init__(self):
         self._recorder = None
         self._chunk_index = 0
+        store = SettingsStore()
+        self._min_chunk = store.get_min_chunk()
+        self._max_chunk = store.get_max_chunk()
+        self._silence = store.get_silence_threshold()
 
         # Live state for the status row / developer panel.
         self.info = {
@@ -39,6 +41,12 @@ class RecorderSocket:
     def start(self) -> None:
         # A fresh Recorder per take: it re-detects the mic each time,
         # so plugging in a headset between recordings just works.
+        # Chunking knobs are re-read per take so Settings changes
+        # apply from the next recording onward.
+        store = SettingsStore()
+        self._min_chunk = store.get_min_chunk()
+        self._max_chunk = store.get_max_chunk()
+        self._silence = store.get_silence_threshold()
         self._recorder = Recorder()
         self._recorder.start()
         self._chunk_index = 0
@@ -65,10 +73,10 @@ class RecorderSocket:
         path = _RUNTIME / f"chunk_{self._chunk_index + 1:04d}.wav"
         result = self._recorder.drain_chunk(
             path,
-            SILENCE_THRESHOLD,
+            self._silence,
             wait_for_pause=True,
-            min_seconds=MIN_CHUNK_SECONDS,
-            max_seconds=MAX_CHUNK_SECONDS,
+            min_seconds=self._min_chunk,
+            max_seconds=self._max_chunk,
         )
         if result is not None:
             self._chunk_index += 1
