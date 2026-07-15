@@ -36,7 +36,10 @@ BACK_BUTTON = "< Back"
 
 # --- Voice command feedback ---
 HEARD_COMMAND = "Heard: “{phrase}”"
-VOICE_HINT = "Voice: say “stop recording” to stop, or “clean it up” to stop + format."
+VOICE_HINT = (
+    "Voice: “stop recording” stops · “clean it up” makes a fresh "
+    "output · “add this” appends to it."
+)
 
 # --- Recording indicator ---
 REC_INDICATOR_ON = "● REC"      # filled dot: mic is live
@@ -48,6 +51,7 @@ STATUS_RECORDING = "Recording..."
 STATUS_STREAMING = "Listening (live transcription)..."
 STATUS_TRANSCRIBING = "Running Whisper..."
 STATUS_FINISHING = "Finishing last chunks..."
+STATUS_FINALIZING = "Finalizing transcript (full-context pass)..."
 STATUS_FORMATTING = "Running Ollama..."
 STATUS_FAILED = "Failed"
 STATUS_STT_STARTING = "Starting Whisper server (loading model)..."
@@ -105,9 +109,12 @@ LLM_SETUP_TITLE = "Formatter socket (Ollama)"
 LLM_SETUP_GUIDE = (
     "1.  Install Ollama from ollama.com/download and open it once.\n"
     "2.  Pull ONE model — paste the line for the size you want:\n"
-    "        Light · 1.3 GB:      ollama pull llama3.2:1b\n"
-    "        Balanced · 2 GB:     ollama pull llama3.2:3b\n"
-    "        Stronger · 4.7 GB:   ollama pull qwen2.5:7b\n"
+    "        Recommended · fast + faithful · 4.1 GB:\n"
+    "        ollama pull dolphin-mistral:7b\n"
+    "        Highest quality, slower · 5.2 GB:\n"
+    "        ollama pull qwen3:8b\n"
+    "        Lightest · 2 GB (tends to add preambles):\n"
+    "        ollama pull llama3.2:3b\n"
     "3.  Type that model's name in the box below, exactly as pulled. "
     "Keep Ollama running — Voise talks to it on this Mac only."
 )
@@ -116,11 +123,18 @@ LLM_MODEL_LABEL = "Ollama model name:"
 # Transcription tuning
 TUNING_TITLE = "Transcription tuning"
 TUNING_INTRO = (
-    "If accuracy feels off, tune these. Beam size: higher = more "
-    "accurate, slightly slower (5 recommended). Language: two-letter "
-    "code like en — pinning it helps a lot with accents; \"auto\" "
-    "detects per chunk and is less reliable. Longer chunks transcribe "
-    "more accurately but update the transcript less often."
+    "While you speak, the live text is a fast draft. When you stop, "
+    "the whole take is re-transcribed in one full-context pass and "
+    "the transcript is replaced — judge accuracy on that final "
+    "result, not the draft.\n"
+    "Language: two-letter code like en. Pinning it beats “auto”, "
+    "especially for accented speech.\n"
+    "Beam size: decoding effort. Higher = more accurate, slower "
+    "(5 recommended).\n"
+    "Min/Max chunk: seconds of audio per live-draft piece. Longer = "
+    "better draft, fewer updates.\n"
+    "Silence threshold: mic level that counts as a pause. Raise it "
+    "in noisy rooms."
 )
 LANG_LABEL = "Language"
 BEAM_LABEL = "Beam size"
@@ -156,7 +170,8 @@ COMMANDS_INTRO = (
     "of typing it. Phrases are editable (comma-separated)."
 )
 STOP_PHRASES_LABEL = "Stop the recording:"
-PROCESS_PHRASES_LABEL = "Stop AND run the formatter:"
+PROCESS_PHRASES_LABEL = "Stop AND rebuild the output:"
+APPEND_PHRASES_LABEL = "Stop AND append to the existing output:"
 VOCAB_INTRO = (
     "Custom vocabulary: words Whisper keeps getting wrong — names, "
     "brands, jargon. List them here (comma-separated) and Whisper is "
@@ -215,23 +230,23 @@ OP_CLEANING = "Cleaning transcript"
 OP_MERGING = "Merging new material"
 OP_LOADING_MODEL = "Loading model"
 
-# --- Process modes ---
-PROCESS_MODE_REPLACE = "Replace output"
-PROCESS_MODE_APPEND = "Append new (merge)"
+# --- Process buttons ---
+PROCESS_REPLACE = "Process (Replace)"
+PROCESS_APPEND = "Process (Append)"
 
 # --- LLM formatting prompt (the built-in default) ---
 # Sent to the local LLM along with the raw transcript. The user can
 # override it from Settings; this default can always be restored.
 FORMATTER_PROMPT = """
-You are a transcript editor. Turn a raw spoken transcript into clear, well-structured text.
+You clean up transcripts of spoken thoughts.
 
-Rules:
-
+Rewrite the transcript as clear, natural written text:
 - Fix spelling, punctuation, and grammar.
-- Organize into paragraphs and numbered or bulleted lists where it helps.
-- Condense rambling and drop filler words, but keep every distinct point, detail, and example - no information may be lost.
-- Do not invent anything that was not said.
-- Output only the final text - no introductions, no preamble.
+- Remove filler words, false starts, and repeated phrases.
+- Condense rambling, but keep every distinct point, detail, and example.
+- Keep the speaker's own structure: write flowing paragraphs by default, and use a numbered or bulleted list ONLY if the speaker is clearly listing items.
+- Do not add anything that was not said. Do not comment on the text.
+- Output only the rewritten text.
 """
 
 # --- LLM merge prompt (Append mode) ---

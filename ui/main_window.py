@@ -70,7 +70,7 @@ class MainWindow(QMainWindow):
         self.chunk_number = 0       # for "Processing chunk N" display
         self.finishing = False      # Stop pressed, draining the tail
         self.stream_text = ""       # everything heard so far (context for whisper)
-        self.auto_process = False   # spoken "clean it up" -> Process after stop
+        self.auto_process = None    # "replace"/"append" if spoken command asked
         self.record_started = None  # for the elapsed clock
 
         self.setWindowTitle(S.APP_TITLE)
@@ -208,15 +208,18 @@ class MainWindow(QMainWindow):
         row = QHBoxLayout()
         row.addWidget(self._section(S.PROCESSED_OUTPUT_LABEL))
         row.addStretch()
-        # Replace = OT2 rebuilt from OT1. Append = new speech is merged
-        # into the existing OT2 (gather thoughts, then add points).
-        self.process_mode = QComboBox()
-        self.process_mode.addItems([S.PROCESS_MODE_REPLACE, S.PROCESS_MODE_APPEND])
-        self.process_mode.setView(QListView())
-        row.addWidget(self.process_mode)
-        self.process_button = QPushButton(S.PROCESS)
+        # Two independent actions: Replace rebuilds OT2 from OT1;
+        # Append merges the new speech into the existing OT2.
+        self.append_button = QPushButton(S.PROCESS_APPEND)
+        self.append_button.clicked.connect(
+            lambda: self.process_transcript(append=True)
+        )
+        row.addWidget(self.append_button)
+        self.process_button = QPushButton(S.PROCESS_REPLACE)
         self.process_button.setObjectName("primary")
-        self.process_button.clicked.connect(self.process_transcript)
+        self.process_button.clicked.connect(
+            lambda: self.process_transcript(append=False)
+        )
         row.addWidget(self.process_button)
         layout.addLayout(row)
 
@@ -417,6 +420,11 @@ class MainWindow(QMainWindow):
             ", ".join(self.settings_store.get_process_phrases())
         )
         v.addWidget(self.process_phrases_edit)
+        v.addWidget(self._muted(S.APPEND_PHRASES_LABEL))
+        self.append_phrases_edit = QLineEdit(
+            ", ".join(self.settings_store.get_append_phrases())
+        )
+        v.addWidget(self.append_phrases_edit)
 
         v.addWidget(self._muted(S.VOCAB_INTRO))
         self.vocab_edit = QTextEdit()
@@ -523,6 +531,7 @@ class MainWindow(QMainWindow):
         self.settings_store.set_command_phrases(
             self.stop_phrases_edit.text(),
             self.process_phrases_edit.text(),
+            self.append_phrases_edit.text(),
         )
         self.settings_store.set_whisper_model_path(self.model_path_edit.text())
         self.settings_store.set_ollama_model(self.ollama_model_edit.text())
@@ -647,7 +656,7 @@ class MainWindow(QMainWindow):
 
     def start_recording(self):
         try:
-            self.recorder.start()
+            self.recorder.start(self.is_streaming_mode())
         except Exception as e:
             self.status.setText(str(e))
             return
@@ -665,7 +674,7 @@ class MainWindow(QMainWindow):
             self.chunk_number = 0
             self.finishing = False
             self.stream_text = ""
-            self.auto_process = False
+            self.auto_process = None
             self.status.setText(S.STATUS_STREAMING)
             self.chunk_timer.start()
         else:
@@ -685,10 +694,11 @@ class MainWindow(QMainWindow):
         self.start_button.setEnabled(True)
         self.mode.setEnabled(True)
         if self.auto_process:
-            # The user SPOKE the request ("clean it up") - that's a
-            # manual trigger, just voiced. Run the formatter once.
-            self.auto_process = False
-            self.process_transcript()
+            # The user SPOKE the request - a manual trigger, just
+            # voiced. Runs after the final pass, on the best transcript.
+            mode = self.auto_process
+            self.auto_process = None
+            self.process_transcript(append=(mode == "append"))
 
     # ------------------------------------------------------------------
     # Bulk mode
@@ -817,8 +827,7 @@ class MainWindow(QMainWindow):
             self._process_next_chunk()
         elif self.finishing:
             self.finishing = False
-            self.ot1_writer.flush()
-            self._recording_finished()
+            self._start_final_pass()
 
     def _stop_streaming(self):
         self.chunk_timer.stop()
@@ -828,12 +837,45 @@ class MainWindow(QMainWindow):
             self.chunk_queue.append(final)
         self.finishing = True
         if not self.chunk_busy and not self.chunk_queue:
-            # Nothing left in flight - we're already done.
+            # Nothing left in flight - go straight to the final pass.
             self.finishing = False
-            self.ot1_writer.flush()
-            self._recording_finished()
+            self._start_final_pass()
         else:
             self._process_next_chunk()
+
+    # --- final pass: where streaming accuracy really comes from ------
+
+    def _start_final_pass(self):
+        """The live chunks were a fast draft. Re-transcribe the WHOLE
+        take in one go - Whisper with full context is dramatically
+        more accurate than any chunk-by-chunk result - and replace
+        OT1 with that."""
+        path = self.recorder.full_take_path()
+        if not path:
+            self.ot1_writer.flush()
+            self._recording_finished()
+            return
+        self.status.setText(S.STATUS_FINALIZING)
+        self.stt_thread = run_in_background(
+            lambda: self.stt.transcribe(path),
+            self._final_pass_done,
+            self._final_pass_failed,
+        )
+
+    def _final_pass_done(self, text):
+        # The full take includes any spoken command at the end
+        # ("clean it up") - strip it from the final transcript too.
+        _, text, _ = self._detect_voice_command(text)
+        self.ot1_writer.flush()
+        if text:
+            self.transcript.setPlainText(text)
+            self.stream_text = text
+        self._recording_finished()
+
+    def _final_pass_failed(self, _err):
+        # Keep the chunk-based draft rather than losing everything.
+        self.ot1_writer.flush()
+        self._recording_finished()
 
     # ------------------------------------------------------------------
     # Voice commands
@@ -845,6 +887,7 @@ class MainWindow(QMainWindow):
         # Phrases come from settings so the user can pick their own
         # trigger words (Settings -> Dictation & Voice Commands).
         for action, phrases in (
+            ("append", self.settings_store.get_append_phrases()),
             ("process", self.settings_store.get_process_phrases()),
             ("stop", self.settings_store.get_stop_phrases()),
         ):
@@ -868,7 +911,9 @@ class MainWindow(QMainWindow):
     def _run_voice_command(self, action, phrase):
         self.status.setText(S.HEARD_COMMAND.format(phrase=phrase))
         if action == "process":
-            self.auto_process = True
+            self.auto_process = "replace"
+        elif action == "append":
+            self.auto_process = "append"
         # Both commands stop the take. If we're already finishing
         # (command arrived in the tail chunks), don't stop twice.
         if self.recorder.is_recording and not self.finishing:
@@ -880,20 +925,19 @@ class MainWindow(QMainWindow):
     # Formatter (user-triggered: button or voice command)
     # ------------------------------------------------------------------
 
-    def process_transcript(self):
+    def process_transcript(self, append: bool = False):
         self.ot1_writer.flush()  # make sure OT1 is complete on screen
         self.ot2_writer.flush()
         txt = self.transcript.toPlainText().strip()
         if not txt:
             return
         existing = self.processed.toPlainText().strip()
-        append_mode = (
-            self.process_mode.currentText() == S.PROCESS_MODE_APPEND
-            and bool(existing)
-        )
+        # Append with nothing to append to just builds fresh output.
+        append = append and bool(existing)
         self.status.setText(S.STATUS_FORMATTING)
         self.process_button.setEnabled(False)
-        if append_mode:
+        self.append_button.setEnabled(False)
+        if append:
             work = lambda: self.llm.merge(existing, txt)
         else:
             work = lambda: self.llm.process(txt)
@@ -905,11 +949,13 @@ class MainWindow(QMainWindow):
         self.processed.clear()
         self.ot2_writer.feed(text)
         self.process_button.setEnabled(True)
+        self.append_button.setEnabled(True)
         self.status.setText(S.STATUS_READY)
 
     def ollama_failed(self, err):
         self.processed.setPlainText(err)
         self.process_button.setEnabled(True)
+        self.append_button.setEnabled(True)
         self.status.setText(S.STATUS_FAILED)
 
     # ------------------------------------------------------------------

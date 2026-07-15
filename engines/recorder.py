@@ -21,6 +21,13 @@ class Recorder:
         self.stream = None
         self.frames = []
 
+        # Streaming mode keeps a SECOND copy of everything captured,
+        # untouched by chunk draining, so the whole take can be
+        # re-transcribed in one full-context pass at the end - that
+        # final pass is where the real accuracy comes from.
+        self.keep_full_take = False
+        self.all_frames = []
+
         self.output_file = RUNTIME_DIR / "recording.wav"
 
         # Find an input device
@@ -49,11 +56,15 @@ class Recorder:
         # IMPORTANT
         # Copy the buffer.
         # PortAudio reuses the memory every callback.
-        self.frames.append(indata.copy())
+        copied = indata.copy()
+        self.frames.append(copied)
+        if self.keep_full_take:
+            self.all_frames.append(copied)
 
     def start(self):
 
         self.frames = []
+        self.all_frames = []
 
         self.stream = sd.InputStream(
             samplerate=self.sample_rate,
@@ -140,6 +151,15 @@ class Recorder:
 
         sf.write(output_file, audio, self.sample_rate)
 
+        return str(output_file)
+
+    def full_take(self, output_file):
+        """Write the complete take (kept alongside the drained chunks)
+        to one wav file for the final full-context transcription."""
+        if len(self.all_frames) == 0:
+            return None
+        audio = np.concatenate(self.all_frames, axis=0)
+        sf.write(output_file, audio, self.sample_rate)
         return str(output_file)
 
     def close(self):

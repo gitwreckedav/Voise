@@ -38,7 +38,7 @@ class RecorderSocket:
     def is_recording(self) -> bool:
         return self.info["status"] == S.STATE_RUNNING
 
-    def start(self) -> None:
+    def start(self, streaming: bool = False) -> None:
         # A fresh Recorder per take: it re-detects the mic each time,
         # so plugging in a headset between recordings just works.
         # Chunking knobs are re-read per take so Settings changes
@@ -48,6 +48,8 @@ class RecorderSocket:
         self._max_chunk = store.get_max_chunk()
         self._silence = store.get_silence_threshold()
         self._recorder = Recorder()
+        # Streaming keeps the whole take too, for the final pass.
+        self._recorder.keep_full_take = streaming
         self._recorder.start()
         self._chunk_index = 0
         self.info["status"] = S.STATE_RUNNING
@@ -81,6 +83,12 @@ class RecorderSocket:
         if result is not None:
             self._chunk_index += 1
         return result
+
+    def full_take_path(self):
+        """The whole streaming take as one wav (or None if empty)."""
+        if self._recorder is None:
+            return None
+        return self._recorder.full_take(_RUNTIME / "full_take.wav")
 
     def stop_streaming(self):
         """Stop the mic and return one final chunk (or None)."""

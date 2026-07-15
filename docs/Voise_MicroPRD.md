@@ -53,6 +53,8 @@ Panel.
 
 - Bulk and streaming transcription; streaming cuts audio at natural pauses
   and keeps end-to-end latency near one second
+- Draft-then-finalize streaming: live text is a fast draft, and on stop the
+  entire take is re-transcribed in one full-context pass for maximum accuracy
 - Voice commands ("stop recording", "clean it up" — both customizable)
   so a session can run hands-free after the first click
 - Spoken punctuation ("open bracket … close bracket", "new paragraph")

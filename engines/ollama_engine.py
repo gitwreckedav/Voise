@@ -9,6 +9,8 @@ This module knows NOTHING about Qt.
 It is simply a wrapper around Ollama's HTTP API.
 """
 
+import re
+
 import requests
 
 import strings as S
@@ -61,10 +63,17 @@ Transcript:
                 "model": use_model,
                 "prompt": prompt,
                 "stream": False,
+                # Reasoning models (qwen3 etc.) burn 20+ seconds
+                # "thinking" before they answer; formatting doesn't
+                # need it. Non-reasoning models ignore this field.
+                "think": False,
             },
             timeout=120,
         )
 
         response.raise_for_status()
 
-        return response.json()["response"].strip()
+        text = response.json()["response"]
+        # Safety net: strip any thinking block that slipped through.
+        text = re.sub(r"<think>.*?</think>", "", text, flags=re.S)
+        return text.strip()

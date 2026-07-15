@@ -19,7 +19,7 @@ import strings as S
 
 # Shown in the packaged app's About info and used to name the DMG.
 # Bump when shipping a new build (scripts/build_app.sh).
-APP_VERSION = "0.7.0"
+APP_VERSION = "0.8.0"
 
 # GitHub repo for the update check ("owner/repo"). The app asks
 # api.github.com for the latest release tag - ONLY metadata, only if
@@ -34,7 +34,9 @@ DEFAULT_WHISPER_MODEL = str(
 )
 
 # Default Ollama model for the LLM socket (changeable in Settings).
-DEFAULT_OLLAMA_MODEL = "llama3.2:3b"
+# Chosen by bake-off: fastest of the models that rewrite faithfully
+# without adding preambles or forcing structure onto prose.
+DEFAULT_OLLAMA_MODEL = "dolphin-mistral:7b"
 
 # Transcription tuning defaults (all changeable in Settings -> AI Setup).
 # Pinning the language avoids per-chunk misdetection, a common source
@@ -129,10 +131,15 @@ STOP_COMMANDS = [
     "stop recording",
     "stop listening",
 ]
-PROCESS_COMMANDS = [      # stops recording AND runs the formatter
+PROCESS_COMMANDS = [      # stops recording AND rebuilds the output
     "clean it up",
     "process this",
     "process the transcript",
+]
+APPEND_COMMANDS = [       # stops recording AND merges into the output
+    "add this",
+    "append this",
+    "add that in",
 ]
 
 # Whisper invents these phrases when fed silence or breath noise.
@@ -211,10 +218,18 @@ class SettingsStore:
             self._load().get("process_phrases", ""), PROCESS_COMMANDS
         )
 
-    def set_command_phrases(self, stop_raw: str, process_raw: str) -> None:
+    def get_append_phrases(self) -> list:
+        return self._phrase_list(
+            self._load().get("append_phrases", ""), APPEND_COMMANDS
+        )
+
+    def set_command_phrases(
+        self, stop_raw: str, process_raw: str, append_raw: str
+    ) -> None:
         data = self._load()
         data["stop_phrases"] = stop_raw.strip()
         data["process_phrases"] = process_raw.strip()
+        data["append_phrases"] = append_raw.strip()
         self._save(data)
 
     # --- BYOAI: which local models the sockets should use ------------
