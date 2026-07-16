@@ -13,3 +13,5 @@ assets/icon.icns
 assets/icon.iconset/
 assets/icon_source.png
 CLAUDE.md
+.claude/settings.json
+.claude/settings.local.json
