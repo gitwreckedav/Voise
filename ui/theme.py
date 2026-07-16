@@ -109,6 +109,29 @@ QMainWindow, QWidget {{
     color: {text};
     font-size: 13px;
 }}
+QLabel {{
+    background: transparent;
+}}
+
+/* --- pipeline stage chips (main page, top) --- */
+QFrame#stageChip {{
+    background: {surface};
+    border: 1px solid {border};
+    border-radius: 8px;
+}}
+QFrame#stageChip[state="running"] {{
+    border-color: {accent};
+}}
+QFrame#stageChip[state="error"] {{
+    border-color: {REC_RED};
+}}
+QFrame#stageChip[state="done"] {{
+    border-color: {border_lit};
+}}
+QLabel#stageTitle {{
+    font-size: 12px;
+    font-weight: 700;
+}}
 
 /* --- text areas (OT1 / OT2 / prompt editor) --- */
 QTextEdit {{
@@ -309,17 +332,32 @@ QGroupBox::title {{
     padding: 0 4px;
 }}
 
-/* --- collapsible section headers (chevron toggles) --- */
+/* --- collapsible section headers: full-width clickable cards --- */
 QToolButton#sectionToggle {{
-    background: transparent;
-    border: none;
+    background: {s2};
+    border: 1px solid {border};
+    border-radius: 8px;
     color: {text};
     font-size: 13px;
     font-weight: 700;
-    padding: 8px 4px;
+    padding: 10px 12px;
+    text-align: left;
 }}
 QToolButton#sectionToggle:hover {{
+    border-color: {accent};
     color: {accent};
+}}
+
+/* boxed step-by-step guides inside settings sections */
+QFrame#guideBox {{
+    background: {surface};
+    border: 1px solid {border};
+    border-radius: 8px;
+}}
+QLabel#guide {{
+    font-family: Menlo, monospace;
+    font-size: 11px;
+    color: {muted};
 }}
 
 QScrollArea {{

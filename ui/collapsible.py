@@ -9,7 +9,7 @@ show/hide its content.
 """
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QToolButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QSizePolicy, QToolButton, QVBoxLayout, QWidget
 
 
 class CollapsibleSection(QWidget):
@@ -19,6 +19,11 @@ class CollapsibleSection(QWidget):
 
         self._toggle = QToolButton()
         self._toggle.setObjectName("sectionToggle")
+        # Make the header read as clickable: full width + hand cursor.
+        self._toggle.setCursor(Qt.PointingHandCursor)
+        self._toggle.setSizePolicy(
+            QSizePolicy.Expanding, QSizePolicy.Fixed
+        )
         # "&&" because a single "&" in button text is Qt's shortcut
         # marker and would vanish (e.g. "About & Updates" -> "About _Updates").
         self._toggle.setText(title.replace("&", "&&"))

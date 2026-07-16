@@ -27,8 +27,9 @@ from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog,
-    QHBoxLayout, QLabel, QLineEdit, QListView, QMainWindow, QPushButton,
-    QScrollArea, QSpinBox, QStackedWidget, QTextEdit, QVBoxLayout, QWidget
+    QFrame, QHBoxLayout, QLabel, QLineEdit, QListView, QMainWindow,
+    QPushButton, QScrollArea, QSpinBox, QStackedWidget, QTextEdit,
+    QVBoxLayout, QWidget
 )
 
 import strings as S
@@ -41,6 +42,7 @@ from sockets.recorder_socket import RecorderSocket
 from sockets.stt_socket import STTSocket
 from ui.collapsible import CollapsibleSection
 from ui.dev_panel import DevPanel
+from ui.pipeline_bar import PipelineBar
 from ui.theme import build_stylesheet
 from ui.theme_picker import ThemePicker
 from ui.typewriter import Typewriter
@@ -71,6 +73,7 @@ class MainWindow(QMainWindow):
         self.finishing = False      # Stop pressed, draining the tail
         self.stream_text = ""       # everything heard so far (context for whisper)
         self.auto_process = None    # "replace"/"append" if spoken command asked
+        self._append_base = None    # existing OT2 to keep when appending
         self.record_started = None  # for the elapsed clock
 
         self.setWindowTitle(S.APP_TITLE)
@@ -163,6 +166,11 @@ class MainWindow(QMainWindow):
         row.addWidget(self.settings_button)
         layout.addLayout(row)
 
+        # The five pipeline stages, with their providers, always
+        # visible - the app's mental model drawn on screen.
+        self.pipeline_bar = PipelineBar()
+        layout.addWidget(self.pipeline_bar)
+
         # Record buttons.
         row = QHBoxLayout()
         self.start_button = QPushButton(S.START_RECORDING)
@@ -175,25 +183,19 @@ class MainWindow(QMainWindow):
         row.addWidget(self.stop_button)
         layout.addLayout(row)
 
-        # Status row: mic indicator + elapsed + app status + summaries.
+        # Status row: mic indicator + elapsed + app status. (Provider
+        # and model details live in the pipeline bar above.)
         row = QHBoxLayout()
         self.rec_indicator = QLabel(S.REC_INDICATOR_OFF)
         self.rec_indicator.setObjectName("recOff")
         self.elapsed = QLabel("")
         self.elapsed.setObjectName("muted")
         self.status = QLabel(S.STATUS_READY)
-        self.stt_summary = QLabel("")
-        self.stt_summary.setObjectName("muted")
-        self.llm_summary = QLabel("")
-        self.llm_summary.setObjectName("muted")
         row.addWidget(self.rec_indicator)
         row.addWidget(self.elapsed)
         row.addSpacing(10)
         row.addWidget(self.status)
         row.addStretch()
-        row.addWidget(self.stt_summary)
-        row.addSpacing(14)
-        row.addWidget(self.llm_summary)
         layout.addLayout(row)
 
         # Voice command hint - visible so the flow is discoverable.
@@ -211,6 +213,7 @@ class MainWindow(QMainWindow):
         # Two independent actions: Replace rebuilds OT2 from OT1;
         # Append merges the new speech into the existing OT2.
         self.append_button = QPushButton(S.PROCESS_APPEND)
+        self.append_button.setObjectName("primary")
         self.append_button.clicked.connect(
             lambda: self.process_transcript(append=True)
         )
@@ -252,6 +255,24 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.dev_panel)
 
         return page
+
+    @staticmethod
+    def _guide(text: str) -> QWidget:
+        """Step-by-step instructions in their own bordered box, so
+        settings sections read as cards instead of walls of text."""
+        box = QFrame()
+        box.setObjectName("guideBox")
+        inner = QVBoxLayout(box)
+        inner.setContentsMargins(10, 8, 10, 8)
+        label = QLabel(text)
+        label.setObjectName("guide")
+        label.setWordWrap(True)
+        label.setTextInteractionFlags(
+            label.textInteractionFlags()
+            | label.textInteractionFlags().TextSelectableByMouse
+        )
+        inner.addWidget(label)
+        return box
 
     @staticmethod
     def _muted(text: str, selectable: bool = False) -> QLabel:
@@ -327,34 +348,36 @@ class MainWindow(QMainWindow):
     def _build_ai_setup_section(self) -> QWidget:
         box = QWidget()
         v = QVBoxLayout(box)
-        v.setContentsMargins(20, 2, 0, 8)
-        v.setSpacing(6)
+        v.setContentsMargins(16, 8, 4, 12)
+        v.setSpacing(10)
 
         v.addWidget(self._muted(S.AI_SETUP_INTRO))
 
         v.addWidget(self._section(S.STT_SETUP_TITLE))
         self.stt_status = QLabel("…")
         v.addWidget(self.stt_status)
-        v.addWidget(self._muted(S.STT_SETUP_GUIDE, selectable=True))
+        v.addWidget(self._guide(S.STT_SETUP_GUIDE))
         v.addWidget(self._muted(S.STT_MODEL_PATH_LABEL))
         self.model_path_edit = QLineEdit(
             self.settings_store.get_whisper_model_path()
         )
         v.addWidget(self.model_path_edit)
 
+        v.addSpacing(8)
         v.addWidget(self._section(S.LLM_SETUP_TITLE))
         self.llm_status = QLabel("…")
         v.addWidget(self.llm_status)
-        v.addWidget(self._muted(S.LLM_SETUP_GUIDE, selectable=True))
+        v.addWidget(self._guide(S.LLM_SETUP_GUIDE))
         v.addWidget(self._muted(S.LLM_MODEL_LABEL))
         self.ollama_model_edit = QLineEdit(
             self.settings_store.get_ollama_model()
         )
         v.addWidget(self.ollama_model_edit)
+        v.addSpacing(8)
 
         # Transcription tuning: the accuracy dials.
         v.addWidget(self._section(S.TUNING_TITLE))
-        v.addWidget(self._muted(S.TUNING_INTRO))
+        v.addWidget(self._guide(S.TUNING_INTRO))
 
         row = QHBoxLayout()
         row.addWidget(self._muted(S.LANG_LABEL))
@@ -403,12 +426,13 @@ class MainWindow(QMainWindow):
     def _build_speech_section(self) -> QWidget:
         box = QWidget()
         v = QVBoxLayout(box)
-        v.setContentsMargins(20, 2, 0, 8)
-        v.setSpacing(6)
+        v.setContentsMargins(16, 8, 4, 12)
+        v.setSpacing(10)
 
         v.addWidget(self._muted(S.DICTATION_INTRO))
-        v.addWidget(self._muted(S.DICTATION_CHEATSHEET, selectable=True))
+        v.addWidget(self._guide(S.DICTATION_CHEATSHEET))
 
+        v.addSpacing(8)
         v.addWidget(self._muted(S.COMMANDS_INTRO))
         v.addWidget(self._muted(S.STOP_PHRASES_LABEL))
         self.stop_phrases_edit = QLineEdit(
@@ -426,6 +450,7 @@ class MainWindow(QMainWindow):
         )
         v.addWidget(self.append_phrases_edit)
 
+        v.addSpacing(8)
         v.addWidget(self._muted(S.VOCAB_INTRO))
         self.vocab_edit = QTextEdit()
         self.vocab_edit.setMaximumHeight(56)
@@ -436,8 +461,8 @@ class MainWindow(QMainWindow):
     def _build_appearance_section(self) -> QWidget:
         box = QWidget()
         v = QVBoxLayout(box)
-        v.setContentsMargins(20, 2, 0, 8)
-        v.setSpacing(6)
+        v.setContentsMargins(16, 8, 4, 12)
+        v.setSpacing(10)
 
         v.addWidget(self._muted(S.APPEARANCE_INTRO))
         self.theme_picker = ThemePicker(self.settings_store.get_theme())
@@ -467,8 +492,8 @@ class MainWindow(QMainWindow):
     def _build_prompt_section(self) -> QWidget:
         box = QWidget()
         v = QVBoxLayout(box)
-        v.setContentsMargins(20, 2, 0, 8)
-        v.setSpacing(6)
+        v.setContentsMargins(16, 8, 4, 12)
+        v.setSpacing(10)
 
         v.addWidget(self._muted(S.PROMPT_HINT))
         self.prompt_edit = QTextEdit()
@@ -490,8 +515,8 @@ class MainWindow(QMainWindow):
     def _build_about_section(self) -> QWidget:
         box = QWidget()
         v = QVBoxLayout(box)
-        v.setContentsMargins(20, 2, 0, 8)
-        v.setSpacing(6)
+        v.setContentsMargins(16, 8, 4, 12)
+        v.setSpacing(10)
 
         v.addWidget(QLabel(S.VERSION_LABEL.format(version=APP_VERSION)))
         self.update_toggle = QCheckBox(S.CHECK_UPDATES_TOGGLE)
@@ -932,20 +957,23 @@ class MainWindow(QMainWindow):
         if not txt:
             return
         existing = self.processed.toPlainText().strip()
-        # Append with nothing to append to just builds fresh output.
-        append = append and bool(existing)
+        # Append is deterministic: the LLM only cleans the NEW speech;
+        # the app itself puts it below the existing output. A model
+        # can therefore never rewrite or lose what's already there.
+        self._append_base = existing if (append and existing) else None
         self.status.setText(S.STATUS_FORMATTING)
         self.process_button.setEnabled(False)
         self.append_button.setEnabled(False)
-        if append:
-            work = lambda: self.llm.merge(existing, txt)
-        else:
-            work = lambda: self.llm.process(txt)
         self.llm_thread = run_in_background(
-            work, self.ollama_finished, self.ollama_failed
+            lambda: self.llm.process(txt),
+            self.ollama_finished,
+            self.ollama_failed,
         )
 
     def ollama_finished(self, text):
+        if self._append_base:
+            text = self._append_base + "\n\n" + text
+            self._append_base = None
         self.processed.clear()
         self.ot2_writer.feed(text)
         self.process_button.setEnabled(True)
@@ -953,6 +981,7 @@ class MainWindow(QMainWindow):
         self.status.setText(S.STATUS_READY)
 
     def ollama_failed(self, err):
+        self._append_base = None
         self.processed.setPlainText(err)
         self.process_button.setEnabled(True)
         self.append_button.setEnabled(True)
@@ -992,15 +1021,11 @@ class MainWindow(QMainWindow):
         else:
             self.elapsed.setText("")
 
-        stt_bits = f"{S.DEV_STT}: {stt['provider']} · {stt['model']} · {stt['status']}"
-        if stt["latency"]:
-            stt_bits += f" ({stt['latency']})"
-        self.stt_summary.setText(stt_bits)
-
-        llm_bits = f"{S.DEV_LLM}: {llm['provider']} · {llm['model']} · {llm['status']}"
-        if llm["latency"]:
-            llm_bits += f" ({llm['latency']})"
-        self.llm_summary.setText(llm_bits)
+        self.pipeline_bar.update_view(
+            rec, stt, llm,
+            bool(self.transcript.toPlainText().strip()),
+            bool(self.processed.toPlainText().strip()),
+        )
 
         if self.dev_panel.isVisible():
             self.dev_panel.update_view(

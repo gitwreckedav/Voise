@@ -62,8 +62,11 @@ Panel.
   names and domain terms
 - Duplicate-echo and hallucination guards on silent or near-silent audio
 - Manual, user-triggered formatting only — OT2 never regenerates on its own
-- Two processing modes: replace (rebuild the output from the transcript) and
-  append (new speech is merged chronologically into the existing output)
+- Two processing actions: replace (rebuild the output from the transcript)
+  and append (new speech is cleaned and added below the existing output;
+  existing text is never altered)
+- The five pipeline stages are always visible as a status bar showing each
+  stage's provider, model, and live state
 - User-tunable transcription: language pinning, beam width, chunk sizing,
   silence threshold — applied live via an automatic engine restart
 - Markdown export

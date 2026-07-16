@@ -75,5 +75,20 @@ Transcript:
 
         text = response.json()["response"]
         # Safety net: strip any thinking block that slipped through.
-        text = re.sub(r"<think>.*?</think>", "", text, flags=re.S)
-        return text.strip()
+        text = re.sub(r"<think>.*?</think>", "", text, flags=re.S).strip()
+
+        # Small models love announcing their work ("Here's the cleaned
+        # text:"). If the first line is such an announcement ending in
+        # a colon, drop it - the user asked for ONLY the text.
+        first, _, rest = text.partition("\n")
+        if (
+            rest.strip()
+            and first.strip().endswith(":")
+            and re.match(
+                r"(?i)\s*(here|sure|certainly|okay|below|the following"
+                r"|updated|i have|i've|i'll)\b",
+                first,
+            )
+        ):
+            text = rest.strip()
+        return text

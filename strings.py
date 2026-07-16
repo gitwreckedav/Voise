@@ -56,6 +56,15 @@ STATUS_FORMATTING = "Running Ollama..."
 STATUS_FAILED = "Failed"
 STATUS_STT_STARTING = "Starting Whisper server (loading model)..."
 
+# --- Pipeline bar (the five stages across the top) ---
+STAGE_RECORDER = "Recorder"
+STAGE_STT = "Speech → Text"
+STAGE_OT1 = "Raw (OT1)"
+STAGE_LLM = "Formatter"
+STAGE_OT2 = "Output (OT2)"
+STAGE_OT1_SUB = "live transcript · editable"
+STAGE_OT2_SUB = "clean text · editable"
+
 # --- Socket states (shown in status row + developer panel) ---
 STATE_IDLE = "Idle"
 STATE_RUNNING = "Running"
@@ -109,12 +118,12 @@ LLM_SETUP_TITLE = "Formatter socket (Ollama)"
 LLM_SETUP_GUIDE = (
     "1.  Install Ollama from ollama.com/download and open it once.\n"
     "2.  Pull ONE model — paste the line for the size you want:\n"
-    "        Recommended · fast + faithful · 4.1 GB:\n"
+    "        Recommended · light & fast · 2 GB:\n"
+    "        ollama pull llama3.2:3b\n"
+    "        Higher quality · 4.1 GB:\n"
     "        ollama pull dolphin-mistral:7b\n"
     "        Highest quality, slower · 5.2 GB:\n"
     "        ollama pull qwen3:8b\n"
-    "        Lightest · 2 GB (tends to add preambles):\n"
-    "        ollama pull llama3.2:3b\n"
     "3.  Type that model's name in the box below, exactly as pulled. "
     "Keep Ollama running — Voise talks to it on this Mac only."
 )
@@ -227,7 +236,6 @@ ERR_NO_RECORDING = "Recording was never started."
 OP_TRANSCRIBE_BULK = "Transcribing recording"
 OP_TRANSCRIBE_CHUNK = "Processing chunk {n}"
 OP_CLEANING = "Cleaning transcript"
-OP_MERGING = "Merging new material"
 OP_LOADING_MODEL = "Loading model"
 
 # --- Process buttons ---
@@ -249,22 +257,6 @@ Rewrite the transcript as clear, natural written text:
 - Output only the rewritten text.
 """
 
-# --- LLM merge prompt (Append mode) ---
-# Used when the user processes NEW speech into an EXISTING output:
-# the LLM integrates the new material instead of overwriting.
-MERGE_PROMPT = """
-You maintain a running document built from voice notes. You receive the existing document and a new raw transcript.
-
-Rules:
-
-- Clean the new transcript: spelling, punctuation, grammar, structure.
-- Integrate it sensibly and chronologically: extend existing lists where the new material continues them, otherwise add new points or sections at the end.
-- Keep the existing document's content intact - only extend or complete it.
-- Do not invent anything that was not said.
-- Output ONLY the full updated document - no introductions, no preamble.
-"""
-
-MERGE_INPUT_TEMPLATE = (
-    "Existing document:\n\n{document}\n\n"
-    "New transcript to integrate:\n\n{transcript}"
-)
+# Append mode note: the app appends deterministically in code - the
+# LLM only ever cleans the NEW speech, so existing output can never
+# be rewritten or lost by a model.

@@ -19,7 +19,7 @@ import strings as S
 
 # Shown in the packaged app's About info and used to name the DMG.
 # Bump when shipping a new build (scripts/build_app.sh).
-APP_VERSION = "0.8.0"
+APP_VERSION = "0.9.0"
 
 # GitHub repo for the update check ("owner/repo"). The app asks
 # api.github.com for the latest release tag - ONLY metadata, only if
@@ -34,9 +34,10 @@ DEFAULT_WHISPER_MODEL = str(
 )
 
 # Default Ollama model for the LLM socket (changeable in Settings).
-# Chosen by bake-off: fastest of the models that rewrite faithfully
-# without adding preambles or forcing structure onto prose.
-DEFAULT_OLLAMA_MODEL = "dolphin-mistral:7b"
+# Lightweight on purpose: the formatter's job is simple cleanup, and
+# a small model keeps the experience fast. Its habit of adding
+# preamble lines is stripped in code (see ollama_engine.py).
+DEFAULT_OLLAMA_MODEL = "llama3.2:3b"
 
 # Transcription tuning defaults (all changeable in Settings -> AI Setup).
 # Pinning the language avoids per-chunk misdetection, a common source
